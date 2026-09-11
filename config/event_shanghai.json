@@ -1,0 +1,20 @@
+{
+  "_comment": "Event-specific parameters taken from the FIA race-director event note. Detection/activation line distances are measured along the circuit centreline from the start/finish line. Where a value could not be confirmed from the event note it is left at the rules_2026.json default and flagged with '_verified': false.",
+  "event": "Shanghai",
+  "year": 2026,
+  "detection_line_m": 5130,
+  "activation_line_m": 5250,
+  "detection_gap_s": 1.0,
+  "deploy_mj_with_overtake": 9.0,
+  "deploy_mj_without_overtake": 8.5,
+  "recharge_mj": 8.5,
+  "recharge_regime": "standard",
+  "max_power_reduction_kw_per_s": 100,
+  "special_power_reduction_zones": [
+    {"turns": "7-9", "start_m": 1950, "end_m": 2500},
+    {"turns": "11-12", "start_m": 3100, "end_m": 3200}
+  ],
+  "overtake_zones": [],
+  "active_aero_zones": [],
+  "_verified": true
+}

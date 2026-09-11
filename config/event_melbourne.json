@@ -1,0 +1,18 @@
+{
+  "_comment": "Melbourne (Albert Park) event parameters. Detection/activation line distances were NOT confirmable from a published 2026 race-director event note at build time, so they are null and the UI falls back to the longest straight derived from cached telemetry (honest fallback, never invented). Deploy/recharge use the 8.5 MJ/lap standard ceiling from rules_2026.json when the event note does not state a variance.",
+  "event": "Melbourne",
+  "year": 2026,
+  "detection_line_m": null,
+  "activation_line_m": null,
+  "detection_gap_s": 1.0,
+  "deploy_mj_with_overtake": 8.5,
+  "deploy_mj_without_overtake": 8.5,
+  "recharge_mj": 8.5,
+  "recharge_regime": "standard",
+  "max_power_reduction_kw_per_s": 100,
+  "special_power_reduction_zones": [],
+  "overtake_zones": [],
+  "active_aero_zones": [],
+  "brake_harvest_potential_mj": 2.9,
+  "_verified": false
+}

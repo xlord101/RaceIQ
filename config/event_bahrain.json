@@ -1,0 +1,17 @@
+{
+  "_comment": "Template event file. Detection/activation line distances for Sakhir were NOT confirmable from a published 2026 event note at build time, so they are left un-set (null) and the UI falls back to the longest straight derived from the cached telemetry. Verify from the FIA event note before the finale and set '_verified': true.",
+  "event": "Bahrain",
+  "year": 2026,
+  "detection_line_m": null,
+  "activation_line_m": null,
+  "detection_gap_s": 1.0,
+  "deploy_mj_with_overtake": 9.0,
+  "deploy_mj_without_overtake": 8.5,
+  "recharge_mj": 8.5,
+  "recharge_regime": "standard",
+  "max_power_reduction_kw_per_s": 100,
+  "overtake_zones": [],
+  "active_aero_zones": [],
+  "brake_harvest_potential_mj": 0.0,
+  "_verified": false
+}

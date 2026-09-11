@@ -1,0 +1,39 @@
+{
+  "_comment": "Real-world transfer module. The EV-bus solver is the SAME Tier-1 DP / Tier-2 MPC code as the F1 path, driven by this config file. Target deployment: PM e-Bus Sewa electric bus fleets (India).",
+  "vehicle": "electric bus",
+  "battery_usable_window_kwh": 250,
+  "reserve_soc_pct": 15,
+  "regen_per_stop_kwh": 0.8,
+  "traction_per_segment_kwh": 1.2,
+  "max_power_kw": 250,
+  "max_c_rate": 2.0,
+  "stops_on_route": 20,
+  "schedule_adherence_penalty": 1.0,
+  "depot_charge_kw": 100,
+
+  "route": {
+    "_comment": "Route model: 'stops' map 1:1 onto F1 braking zones (harvest), 'segments' between stops map onto F1 straights (deploy).",
+    "segments": 20,
+    "segment_length_km": 1.2,
+    "segment_target_time_s": 150.0,
+    "stop_dwell_s": 25.0,
+    "avg_speed_kph": 28.0,
+    "payload_sensitivity_pct_per_tonne": 4.0,
+    "hvac_load_kwh_per_segment": 0.15,
+    "gradient_energy_kwh_per_segment": 0.05
+  },
+
+  "solver": {
+    "_comment": "DP discretisation for the bus route (same code path as the F1 Tier-1 DP).",
+    "soc_bins": 40,
+    "power_actions_fraction_of_max": [0.0, 0.35, 0.7, 1.0]
+  },
+
+  "modes": {
+    "_comment": "Bus drive modes mapped from F1 postures.",
+    "ATTACK": {"name": "Schedule recovery", "description": "Spend energy to recover schedule; accept higher consumption."},
+    "NEUTRAL": {"name": "Normal service", "description": "Balanced consumption and schedule adherence."},
+    "HARVEST": {"name": "Eco / conserve", "description": "Maximise regen, reduce traction power, protect reserve."},
+    "DEFEND": {"name": "Reserve protect", "description": "Hold state of charge to guarantee depot arrival above reserve."}
+  }
+}

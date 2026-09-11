@@ -1,0 +1,1234 @@
+
+## src\raceiq\__init__.py  (37 lines)
+MODULE: RaceIQ 2026 - Energy & Overtake Intelligence.
+
+## src\raceiq\config.py  (517 lines)
+MODULE: Configuration loading.
+    class ConfigError(RuntimeError)
+        Raised when a config file is missing or malformed.
+        methods: 
+    def config_dir() -> Path
+        Return the active configuration directory.
+    def _read(name) -> Dict[str, Any]
+        
+    def _clean(raw) -> Any
+        Recursively drop ``_comment`` / ``_verified`` style metadata keys.
+    class RulesConfig()
+        Typed view over ``config/rules_2026.json``.
+        methods: regulation_issue, soc_window_mj, harvest_cap_mj_per_lap, deploy_mj_per_lap, mgu_k_max_kw, race_boost_cap_kw, base_deploy_kw, superclip_max_kw, quali_recharge_mj, zone_deploy_kw, mgu_k_torque_nm, torque_efficiency_correction, start_min_speed_kph, pit_stationary_gain_kj, slew_rate_kw_per_s, detection_gap_s, overtake_bonus_mj, overtake_speed_kph, power_to_propel_params, fuel_rpm_params, physics, dp, dp_actions_kw, dp_soc_bins, segment_length_m, points, mguh_deleted, cars
+    def power_to_propel_kw(speed_kph, rules) -> float
+        Electrical power-to-propel limit at a given speed [kW].
+    def fuel_flow_limit_kg_per_h(rpm, rules) -> float
+        Fuel mass-flow limit [kg/h] below the 10,500 rpm knee.
+    class EventConfig()
+        Typed view over ``config/event_<name>.json``.
+        methods: event, year, detection_line_m, activation_line_m, detection_gap_s, deploy_mj_with_overtake, deploy_mj_without_overtake, recharge_mj, special_power_reduction_zones, overtake_zones, active_aero_zones, verified
+    class EvBusConfig()
+        Typed view over ``config/ev_bus.json``.
+        methods: battery_usable_window_kwh, reserve_soc_pct, regen_per_stop_kwh, traction_per_segment_kwh, max_power_kw, max_c_rate, stops_on_route, schedule_adherence_penalty, depot_charge_kw, route, solver, modes
+    class CircuitConfig()
+        One entry of ``config/circuits.json``.
+        methods: name, fastf1_event, openf1_session_key, lap_length_m, brake_harvest_potential_mj, simulation_only, data_status
+    class HMMConfig()
+        Typed view over ``config/hmm_priors.json`` (analytic, untrained).
+        methods: states, ers_states, initial_ers, transitions, p_ot_spent_to_available, p_ot_available_to_spent, emissions, trap, p_overtake_available_initial
+    def load_rules(reload) -> RulesConfig
+        Load ``config/rules_2026.json``.
+    def load_event(name, reload) -> EventConfig
+        Load ``config/event_<name>.json`` (case-insensitive).
+    def load_ev_bus(reload) -> EvBusConfig
+        Load ``config/ev_bus.json``.
+    def load_circuits(reload) -> Dict[str, CircuitConfig]
+        Load every circuit in ``config/circuits.json``.
+    def load_hmm_priors(reload) -> HMMConfig
+        Load ``config/hmm_priors.json``.
+    def list_events() -> List[str]
+        Names of every available ``event_*.json`` config.
+
+## src\raceiq\physics.py  (166 lines)
+MODULE: Deterministic vehicle physics used by the observer, the DP and the bus solver.
+    def brake_energy_mj(v_in_kph, v_out_kph, mass_kg) -> float
+        Kinetic energy shed between two speeds [MJ].
+    def harvest_energy_mj(v_in_kph, v_out_kph, phys) -> float
+        Recoverable energy in a braking event [MJ] under MGU-K-only rules.
+    def drag_power_kw(speed_kph, phys) -> float
+        Aerodynamic + rolling resistance power at a given speed [kW].
+    def segment_duration_s(length_m, speed_kph) -> float
+        Time to cover ``length_m`` at ``speed_kph`` [s].
+    def steady_state_speed_gain(power_kw, speed_kph, phys) -> float
+        Speed the car eventually gains if ``power_kw`` is held [m/s].
+    def _deploy_efficiency(phys) -> float
+        Drivetrain x deployment efficiency (battery joules -> wheel joules).
+    def deploy_gain(power_kw, base_time_s, speed_kph, length_m, phys, horizon_s) -> Tuple[float, float]
+        Time saved and battery energy spent by deploying ``power_kw``.
+    def superclip_penalty_s(energy_mj, phys) -> float
+        Time lost when the MGU-K recharges off the ICE at full throttle [s].
+
+## src\raceiq\pipeline.py  (481 lines)
+MODULE: End-to-end replay pipeline: session -> segments -> estimated SoC field.
+    class ReplaySession()
+        A loaded race ready for replay, decision-making and charts.
+        methods: event, total_laps, drivers, detection_lines, detection_lines_are_inferred, team, lap_time_s, position_on_lap, soc_at_lap, soc_pct_at_lap, lap_trace, speed_trace, timing_tower, soc_history
+    def _aggression_from_speed(telemetry, rules) -> Dict[str, float]
+        Per-driver deployment multiplier from mean speed vs the field.
+    def _project_single_lap(profile, start_soc_mj, window, lap, gain, target) -> pd.DataFrame
+        Integrate one lap's SoC from a per-segment net-energy profile.
+    def _mode_from_row(harvest_mj, deploy_mj, clipping) -> str
+        Render the ERS mode chip (text only - the UI uses no icons).
+    def build_replay(event, year, session, rules, cache_dir, drivers, max_laps) -> ReplaySession
+        Load a cached race and estimate the SoC field.
+    def _project_race(profile, n_laps, window, lap_mod_mj, gain, target) -> np.ndarray
+        Project end-of-lap SoC for a whole race from one lap's profile.
+    def _lap_modifiers(data, driver, n_laps) -> np.ndarray
+        Per-lap energy correction [MJ] from real lap times and track status.
+    def segments_frame(replay) -> pd.DataFrame
+        Segments as a DataFrame (handy for charts and caching).
+
+## src\raceiq\types.py  (313 lines)
+MODULE: Shared dataclasses used across ingest / inference / rules / optimize / decision.
+    class Segment()
+        One discretised slice of a lap.
+        methods: length_m, duration_s
+    class SocState()
+        Output of the deterministic SoC observer for one telemetry sample.
+        methods: from_soc
+    class Belief()
+        Posterior over the 8 hidden opponent states.
+        methods: p_Lharvest, p_Lderate, dominant_ers
+    class PlanSegment()
+        Requested MGU-K behaviour for one segment of a candidate plan.
+        methods: 
+    class DeploymentPlan()
+        A full-lap candidate energy plan produced by the optimiser.
+        methods: deploy_mj, harvest_mj, net_mj, peak_power_kw
+    class ComplianceResult()
+        Outcome of a rule-ledger check.
+        methods: violations, as_rows
+    class Posture()
+        Tier-2 MPC output: the strategic posture for the next stint.
+        methods: 
+    class OvertakeDecision()
+        Output of the Overtake EV engine: the priced bet at the detection line.
+        methods: as_dict
+    class BusRecommendation()
+        EV-bus transfer output: one drive mode for the next route segment.
+        methods: 
+
+## src\raceiq\baselines\__init__.py  (23 lines)
+MODULE: Baselines: reference strategies RaceIQ is measured against.
+
+## src\raceiq\baselines\compare.py  (111 lines)
+MODULE: Head-to-head baseline comparison: RaceIQ vs Greedy vs Conservative.
+    class RaceIQStrategy()
+        Drive using the Tier-2 MPC posture optimiser.
+        methods: __init__, plan
+    class Comparison()
+        Result of :func:`compare` across all strategies.
+        methods: as_rows
+    def compare(frontier, config, event, laps, initial_soc_mj, horizon, circuit_harvest_potential_mj, **sim_kwargs) -> Comparison
+        Run Greedy, Conservative and RaceIQ on the same replay; rank by time.
+
+## src\raceiq\baselines\conservative.py  (39 lines)
+MODULE: Conservative baseline: save the battery, especially in the late laps.
+    class ConservativeStrategy()
+        Harvest/save late; never attack.
+        methods: __init__, plan
+
+## src\raceiq\baselines\greedy.py  (43 lines)
+MODULE: Greedy baseline: attack whenever within the Detection Gap.
+    class GreedyStrategy()
+        Max-deploy whenever the rival ahead is within the Detection Gap.
+        methods: __init__, _detection_gap, plan
+
+## src\raceiq\baselines\race_sim.py  (160 lines)
+MODULE: Offline race simulator used to compare energy strategies head-to-head.
+    class SimResult()
+        Outcome of simulating one strategy over a race replay.
+        methods: total_time_s
+    class Strategy(Protocol)
+        Anything that returns a target net energy [MJ] for the next lap.
+        methods: plan
+    class RaceSimulator()
+        Roll a race forward under a fixed energy strategy and rival model.
+        methods: __init__, simulate
+
+## src\raceiq\decision\__init__.py  (12 lines)
+MODULE: Decision layer: the priced overtake bet (Phase 5).
+
+## src\raceiq\decision\overtake_ev.py  (241 lines)
+MODULE: Overtake EV engine - the priced bet at the Detection Line.
+    class OvertakeContext()
+        Inputs to the Overtake EV engine for one detection event.
+        methods: 
+    class OvertakeEV()
+        Price a single overtaking opportunity as a legal bet.
+        methods: __init__, _points_gain, _repayment_seconds, evaluate
+
+## src\raceiq\decision\pass_model.py  (213 lines)
+MODULE: Pass-probability model for the Overtake EV engine.
+    def _as_feature_row(features) -> np.ndarray
+        Project a feature mapping onto the fixed 12-feature vector order.
+    class PassModel()
+        Calibrated logistic-regression estimate of ``P(pass)``.
+        methods: __init__, trained, fit, predict_proba, heuristic_p_pass
+
+## src\raceiq\inference\__init__.py  (19 lines)
+MODULE: Inference layer: estimating what nobody publishes.
+
+## src\raceiq\inference\clipping.py  (198 lines)
+MODULE: Clipping / superclipping detection from public telemetry.
+    class ClippingDetector()
+        Stateful per-sample clipping detector.
+        methods: __init__, reset, detect
+    def clipping_flags(telemetry, throttle_min, speed_delta_max_kph, min_speed_kph, min_duration_s, min_speed_frac_of_max) -> pd.DataFrame
+        Vectorised clipping detection over a lap's telemetry.
+    def clipping_summary(flagged) -> Dict[str, float]
+        Aggregate clipping statistics for one lap.
+    def clipping_events(flagged) -> List[Tuple[float, float]]
+        Return ``[(start_m, end_m), ...]`` for each contiguous clipping run.
+    def _unused(_) -> None
+        
+
+## src\raceiq\inference\ers_mode.py  (85 lines)
+MODULE: ERS mode classification from public telemetry.
+    class ErsClassifier()
+        Rule-based ERS mode label: ``Harvest`` / ``Balance`` / ``Deploy``.
+        methods: __init__, classify
+
+## src\raceiq\inference\opponent_belief.py  (278 lines)
+MODULE: 8-state opponent HMM - inferring a rival's hidden battery state.
+    def _norm(x) -> np.ndarray
+        
+    class OpponentBelief()
+        Recursive Bayesian filter over the 8 hidden opponent states.
+        methods: __init__, _build_transitions, _prior, reset, emission_likelihood, update, _trap, batch
+    def compute_emissions(speed_trace, baseline_speed_kph, brake_distance_m, baseline_brake_m, in_aero_zone) -> Dict[str, float]
+        Derive HMM emission values from public telemetry for one rival.
+
+## src\raceiq\inference\soc_observer.py  (631 lines)
+MODULE: Deterministic SoC observer.
+    class LapObservation()
+        Result of running the observer over one lap.
+        methods: soc_series, clipping_count, mode_counts
+    class SocObserver()
+        Rule-clamped energy-balance observer for one car.
+        methods: __init__, _eligible, _segment_capacity_mj, _calibrate_duty, reset, soc_pct, update, run_lap, fit, fit_duty_to_observed, lap_profile
+    def _observable_clipping_mask(telemetry, throttle_min, min_speed_frac_of_max) -> np.ndarray
+        Samples where clipping would be *visible* in public telemetry.
+    def _get(row, key, default) -> float
+        Read a value from a dict, Series or object without raising.
+    def observe_field(telemetry_by_driver, segments, rules, aggression, lap) -> Dict[str, LapObservation]
+        Run the observer for every car (cheap: ~22 x 500 arithmetic segments).
+
+## src\raceiq\ingest\__init__.py  (44 lines)
+MODULE: Data ingest layer: FastF1 cache + OpenF1 + local fallbacks.
+
+## src\raceiq\ingest\cache_manager.py  (232 lines)
+MODULE: Filesystem layout, cache manifest and pre-caching.
+    def data_dir() -> Path
+        ``<repo>/data`` - honours ``RACEIQ_DATA_DIR``.
+    def cache_dir() -> Path
+        FastF1 HTTP cache directory.
+    def raw_dir() -> Path
+        Raw OpenF1 downloads.
+    def tracks_dir() -> Path
+        Local track geometry (TUMFTM / GeoJSON).
+    def processed_dir() -> Path
+        Derived artefacts (segments, observer output, frontier caches).
+    def manifest_path() -> Path
+        Path of the cache manifest JSON.
+    def _ensure_dirs() -> None
+        
+    def read_manifest() -> Dict[str, Any]
+        Read the cache manifest; empty dict when absent.
+    def write_manifest(manifest) -> Path
+        Persist the cache manifest and return its path.
+    def cache_status() -> Dict[str, Any]
+        Summarise what is available offline right now.
+    def _count_telemetry_samples(session) -> int
+        Best-effort count of cached telemetry rows across all drivers.
+    def pre_cache_sessions(events, cache_dir_, year, session, with_openf1) -> Dict[str, Any]
+        Pre-cache FastF1 sessions and download OpenF1 tables.
+
+## src\raceiq\ingest\fastf1_loader.py  (430 lines)
+MODULE: FastF1 session loading and lap-telemetry extraction.
+    class SessionData()
+        A cleaned, offline-usable race session.
+        methods: driver_team, driver_number, has_telemetry, fastest_lap_number, lap_time_s
+    def _session_lap_frame(s) -> pd.DataFrame
+        Return the laps DataFrame with plain python types where needed.
+    def _driver_info(s, laps) -> pd.DataFrame
+        Build a driver/team/number table from whatever the session offers.
+    def _circuit_info_dict(s) -> Dict[str, Any]
+        Extract corner geometry + rotation for the track map.
+    def _openf1_telemetry(session_key, driver_number, year, event)
+        Fallback path: build a laps/telemetry structure from OpenF1 ``car_data``.
+    def load_fastf1_session(year, event, session, cache_dir_, with_telemetry, allow_openf1_fallback) -> SessionData
+        Load a cached race session.
+    def get_lap_telemetry(data, driver, lap_number, resample_m) -> pd.DataFrame
+        Return one driver's telemetry for one lap.
+    def _resample_by_distance(tel, step_m) -> pd.DataFrame
+        Interpolate telemetry onto a uniform distance grid.
+    def list_cached_events() -> List[str]
+        Circuit keys that have a FastF1 cache entry, per the manifest.
+
+## src\raceiq\ingest\openf1_client.py  (165 lines)
+MODULE: OpenF1 client (gaps, positions, stints, pit, SC/VSC, weather).
+    def _get(endpoint, params, timeout) -> Any
+        
+    def fetch_openf1(endpoint, params, timeout) -> pd.DataFrame
+        Fetch one OpenF1 endpoint and return it as a DataFrame.
+    def _raw_path(session_key, endpoint, raw_dir_) -> Path
+        
+    def download_session(session_key, endpoints, raw_dir_, timeout) -> Dict[str, Path]
+        Download and persist OpenF1 tables for one session.
+    def load_openf1_local(session_key, endpoint, raw_dir_) -> pd.DataFrame
+        Load a previously downloaded OpenF1 table from disk (offline path).
+    def session_key_for(year, event) -> Optional[int]
+        Resolve an OpenF1 ``session_key`` for a race.
+    def list_openf1_sessions(year) -> pd.DataFrame
+        Convenience wrapper: every session OpenF1 knows about for a year.
+
+## src\raceiq\optimize\__init__.py  (21 lines)
+MODULE: Optimisation layer: the price of energy.
+
+## src\raceiq\optimize\frontier.py  (133 lines)
+MODULE: Pareto frontier: the exchange rate between joules and seconds.
+    class ParetoFrontier()
+        Non-dominated (energy, lap time) points for one lap.
+        methods: __init__, __len__, is_monotonic, baseline_time_s, best_time_s, max_energy_mj, time_for_energy, energy_for_time, exchange_rate, marginal_rate, point_at, as_frame, to_dict
+
+## src\raceiq\optimize\tier1_dp.py  (583 lines)
+MODULE: Tier-1 dynamic program: the price list for one lap.
+    def phase_durations(segments) -> np.ndarray
+        Duration of the acceleration phase enclosing each segment [s].
+    def segment_actions(seg, rules, horizon_s) -> Tuple[np.ndarray, np.ndarray, np.ndarray]
+        Legal actions for one segment.
+    class _Stage()
+        Pre-compiled value-function update for one segment.
+        methods: 
+    class _Program()
+        A compiled lap: everything the timed loop needs and nothing else.
+        methods: __len__, n_actions
+    def _compile(segments, rules, n_report, oversample) -> _Program
+        Build the per-segment shift tables once, outside the timed loop.
+    class LapSolution()
+        Result of one Tier-1 solve.
+        methods: exchange_rate_s_per_mj
+    def solve_lap_dp(segments, config, soc_bins, start_soc_frac, return_plan, program) -> ParetoFrontier
+        Solve the single-lap energy/time DP.
+    def precompile(segments, config, soc_bins) -> _Program
+        Build (and cache) the stage tables for a circuit.
+    def solve_lap_dp_full(segments, config, soc_bins, start_soc_frac, return_plan, program) -> LapSolution
+        Full Tier-1 solve with timing instrumentation (used by validation).
+    def _resample(frontier, n_report) -> ParetoFrontier
+        Project a fine-grid frontier onto the coarser public energy grid.
+    def _recover_plan(take, stages, end_bin) -> np.ndarray
+        Walk the back-pointers backwards from ``end_bin`` to recover the plan.
+    def _recover_plan_full(take, stages, end_bin) -> Tuple[np.ndarray, np.ndarray]
+        Like :func:`_recover_plan` but also return the per-stage SoC shift.
+    class Tier1DP()
+        Object wrapper around :func:`solve_lap_dp` with a cached result.
+        methods: __init__, program, solve, _trace, plan, deployment_plan, _backpointers, frontier, last_solve_ms, exchange_rate
+
+## src\raceiq\optimize\tier2_mpc.py  (251 lines)
+MODULE: Tier-2 MPC - the race-posture optimiser.
+    class MPCState()
+        Race context for one MPC re-plan (all estimates, not published values).
+        methods: 
+    class Tier2MPC()
+        Scenario-tree race-posture optimiser over the Tier-1 frontier.
+        methods: __init__, _rival_factors, _simulate, recommend, _rationale
+
+## src\raceiq\rules\__init__.py  (16 lines)
+MODULE: Rule layer: the FIA 2026 compliance ledger.
+
+## src\raceiq\rules\ledger.py  (244 lines)
+MODULE: FIA rule-compliance ledger.
+    class ComplianceLedger()
+        Checks candidate plans (and the observer's own estimates) against rules.
+        methods: __init__, check, _worst_slew, check_power_profile, board_rows
+    def certificate_text(result) -> str
+        Plain-text compliance certificate (used in the README and UI footer).
+
+## src\raceiq\track\__init__.py  (19 lines)
+MODULE: Track segmentation and circuit geometry.
+
+## src\raceiq\track\segmentation.py  (313 lines)
+MODULE: Lap segmentation: brake / exit / straight / coast.
+    class TrackGeometry()
+        Circuit geometry used for segmentation and the track map.
+        methods: n_corners
+    def geometry_from_circuit_info(circuit_info, lap_length_m) -> TrackGeometry
+        Build :class:`TrackGeometry` from a FastF1 ``get_circuit_info()`` dict.
+    def _classify(brake, accel_mps2, speed_kph, vmax_kph, brake_thresh) -> str
+        Label one point of the speed trace.
+    def build_segments(track_geo, speed_trace, rules, step_m) -> List[Segment]
+        Cut a lap into fixed-length typed segments.
+    def mark_key_acceleration_zones(segments, n_zones, min_length_m, kinds) -> List[Segment]
+        Flag the longest full-throttle acceleration runs as key zones (350 kW).
+    def longest_straight(segments) -> Optional[tuple]
+        Return ``(start_m, end_m, length_m)`` of the longest straight run.
+    def segments_from_telemetry(telemetry, rules, circuit_info, lap_length_m) -> List[Segment]
+        Convenience wrapper: telemetry -> segments.
+    def segments_to_frame(segments) -> pd.DataFrame
+        Segments -> tidy DataFrame (for caching and charts).
+    def max_legal_deploy_kw(speed_kph, segment, rules) -> float
+        Highest MGU-K power the rulebook permits in this segment [kW].
+
+## src\raceiq\transfer\__init__.py  (11 lines)
+MODULE: Real-world transfer layer: F1 2026 strategy applied to other domains.
+
+## src\raceiq\transfer\ev_bus.py  (229 lines)
+MODULE: EV-bus transfer: the same solver, a different config file.
+    class BusState()
+        Live state of one bus on its route, fed to :meth:`EVBusSolver.recommend`.
+        methods: 
+    class EVBusSolver()
+        Recommend a drive mode for the next route segment.
+        methods: __init__, _route, _usable_window_kwh, _net_energy_kwh, project_soc, recommend, _rationale, _per_stop_plan
+
+## src\raceiq\ui\__init__.py  (18 lines)
+MODULE: UI layer for RaceIQ 2026 (spec Section 3).
+
+## src\raceiq\ui\contract.py  (290 lines)
+MODULE: Frontend data contract for the RaceIQ broadcast-style pit-wall UI.
+    def _belief(b) -> Dict[str, Any]
+        
+    def _posture(p) -> Dict[str, Any]
+        
+    def _compliance(c) -> Dict[str, Any]
+        
+    def _driver_row(r) -> Dict[str, Any]
+        
+    def _frontier(f) -> Dict[str, Any]
+        
+    def _comparison(c) -> Dict[str, Any]
+        
+    def _frame(d) -> Dict[str, Any]
+        
+    def _working(scenario) -> Dict[str, Any]
+        The full calculation chain, so a judge can follow every number.
+    def scenario_to_frontend(scenario) -> Dict[str, Any]
+        Project a full :class:`Scenario` into the JSON frontend contract.
+    def write_sample(out_dir, seed, battle_gap_s) -> List[str]
+        Write the demo fixtures: five real grids + headline decision frames.
+
+## src\raceiq\ui\grid.py  (472 lines)
+MODULE: Real 2026 grid registry for the RaceIQ pit wall — **we are Haas**.
+    def _norm_colour(c) -> str
+        Normalise a FastF1 colour to ``#RRGGBB`` (FastF1 omits the ``#``).
+    class GridDriver()
+        One real 2026 entrant.
+        methods: is_ours
+    class GridRow()
+        One car in the running order, with its gaps.
+        methods: driver
+    class Grid()
+        A complete, ordered grid for one circuit at one lap.
+        methods: __len__, order, row, car_ahead, as_rows
+    def _race_dir(circuit) -> Optional[str]
+        Locate the cached race folder for ``circuit``, if it exists.
+    def load_lineup(circuit) -> Tuple[List[GridDriver], str]
+        Real 2026 lineup for ``circuit``.
+    def real_pace(circuit) -> Dict[str, float]
+        Real median lap time [s] per driver code, from cached lap timing.
+    def circuit_status(circuit) -> Tuple[str, bool]
+        ``(data_status, simulation_only)`` for a circuit, honouring the config.
+    def build_grid(circuit, lap, pace) -> Grid
+        Build the real running order for ``circuit`` at ``lap``.
+    def apply_edits(grid, order, gap_overrides) -> Grid
+        Return a new, **edited** grid (the analyst moved cars around).
+    def our_cars(grid) -> List[GridRow]
+        The Haas cars in this grid, in running order.
+
+## src\raceiq\ui\main.py  (516 lines)
+MODULE: RaceIQ 2026 - Streamlit pit-wall terminal (spec Section 3).
+    def _chart(fig, key) -> None
+        Render a plotly figure full-width with a unique element key.
+    def _inject_css() -> None
+        
+    def _bar(pct) -> str
+        
+    def _chip(text, colour) -> str
+        
+    def _kv(label, value) -> str
+        
+    def _header(scn, mode) -> None
+        
+    def _timing_tower(scn) -> None
+        
+    def _track_map(scn) -> go.Figure
+        Schematic circuit outline with detection / activation lines.
+    def _decision_card(scn) -> None
+        
+    def _driver_compare(scn) -> None
+        
+    def _compliance_board(scn) -> None
+        
+    def _chart_soc(scn) -> go.Figure
+        
+    def _chart_speed(scn) -> go.Figure
+        
+    def _chart_delta(scn, baseline) -> go.Figure
+        Cumulative time delta vs the RaceIQ line (0 by construction).
+    def _tab_replay(scn, key_prefix) -> None
+        
+    def _tab_simulation() -> None
+        
+    def _tab_ev_bus() -> None
+        
+    def main() -> None
+        
+
+## src\raceiq\ui\racecast.py  (419 lines)
+MODULE: Full-race simulation frames ("racecast") for the animated RaceIQ UI.
+    class CarFrame()
+        One car's state on one lap — this is what the hover card shows.
+        methods: 
+    class HaasFrame()
+        Pinned Haas car: everything in :class:`CarFrame` plus the live decision.
+        methods: as_dict
+    class LapFrame()
+        One lap of the race: all 22 cars + the pinned Haas pair.
+        methods: as_dict
+    class RaceCast()
+        A complete simulated replay for one circuit.
+        methods: as_dict
+    def _telemetry_trace(circuit, seed) -> pd.DataFrame
+        A representative speed/throttle/clipping trace for the circuit.
+    def _sample_telemetry(trace, phase, rng)
+        Sample the trace at ``phase`` (0-1 of the lap) with small lap-to-lap noise.
+    def build_racecast(circuit, total_laps, seed, rules, frontier) -> RaceCast
+        Simulate a full race for ``circuit`` on that day's real grid.
+    def write_racecast(out_dir, circuits, seed) -> List[str]
+        Write ``racecast_<circuit>.json`` for each circuit.
+
+## src\raceiq\ui\scenario.py  (452 lines)
+MODULE: Scenario builder for the RaceIQ UI (spec Section 3.4 "Scenario Mode").
+    class DriverRow()
+        One row of the timing tower. All energy values are ESTIMATES.
+        methods: 
+    class Scenario()
+        Everything the UI needs to render one frame of the pit-wall terminal.
+        methods: gap_at_detection_s, eligible, top5
+    def _build_tower(rules, seed, grid) -> List[DriverRow]
+        Timing tower built from the **real** grid (order + gaps from :mod:`grid`).
+    def _rival_belief(trap, steps) -> Belief
+        Run the 8-state HMM to get the rival's hidden ERS state + trap verdict.
+    def _compliance(rules) -> ComplianceResult
+        Certify a **Tier-1 DP** deployment plan against the FIA stack.
+    def _soc_history(tower, laps, window, seed) -> pd.DataFrame
+        Estimated SoC vs lap for the top 5 (thin-line chart).
+    def _speed_trace(seed) -> pd.DataFrame
+        Synthetic lap with a real clipping region, flagged by the detector.
+    def build_scenario(event, lap, total_laps, ego_index, harvest_mj, trap, seed, rules, our_team, focus, grid, focus_gap) -> Scenario
+        Build one complete, offline, reproducible UI frame.
+
+## src\raceiq\validation\__init__.py  (31 lines)
+MODULE: Validation without ground truth (spec Section 7).
+
+## src\raceiq\validation\metrics.py  (512 lines)
+MODULE: Validation metrics (spec Section 7).
+    def physics_frontier(harvest_mj_per_lap) -> ParetoFrontier
+        Deterministic energy<->time frontier for a circuit [MJ -> lap time].
+    def synthetic_lap_telemetry(n, lap_length_m, clip_start, clip_end, seed) -> pd.DataFrame
+        A reproducible synthetic lap: corners, straights, and one flat top-speed
+    def rule_closure_check(n_laps, rules, seed) -> Dict[str, object]
+        Estimated SoC and per-lap energies must never break the FIA stack.
+    def clipping_precision_recall(trials, seed) -> Dict[str, float]
+        Recover a *known* injected clipping region (self-consistency check).
+    def _synthetic_pass_dataset(n, seed)
+        Labelled detection events from a known logit (so AUC is measurable).
+    def pass_auc(n, seed, test_frac) -> Dict[str, float]
+        Fit the pass model and report AUC / Brier on a held-out split.
+    def circuit_ablation(baku_harvest, monza_harvest) -> Dict[str, object]
+        The policy must respond to harvest potential (Baku vs Monza).
+    def baseline_report(laps, harvest, initial_soc_mj) -> Dict[str, object]
+        Run RaceIQ / Greedy / Conservative on one replay and rank by time.
+    def observer_calibration_check(event, year, max_drivers, laps_per_driver, cache_dir, tol_abs_error) -> Dict[str, object]
+        Calibrate the demand duty against clipping that is visible in real telemetry.
+    def run_all(laps, harvest, n_pass_samples) -> Dict[str, object]
+        Execute every validation check and return a combined report.
+
+## scripts\_bench2_dp.py  (74 lines)
+MODULE: Micro-benchmark part 2: can the exact (interpolated) update fit in budget?
+    def timeit(fn, reps)
+        
+    def v3()
+        
+    def v5()
+        
+    def v6()
+        
+    def v7()
+        
+    def v8()
+        
+
+## scripts\_bench3_dp.py  (46 lines)
+MODULE: Integer-shift gather at various grid resolutions: cost and quantisation error.
+    def timeit(fn, reps)
+        
+
+## scripts\_bench4_dp.py  (97 lines)
+MODULE: Optimise the Tier-1 sweep: preallocated buffers, float32, take(out=).
+    def run(fn, reps)
+        
+    def v_take_add_min()
+        
+    def v_direct()
+        
+    def v_take_out()
+        
+    def v_f32()
+        
+
+## scripts\_bench_dp.py  (92 lines)
+MODULE: Micro-benchmark: where does the Tier-1 DP time actually go?
+    def timeit(fn, reps)
+        
+    def v1()
+        
+    def v2()
+        
+    def v3()
+        
+    def v4()
+        
+
+## scripts\_dbg_dp.py  (56 lines)
+MODULE: Debug: trace the Tier-1 value function stage by stage.
+
+## scripts\_prof_dp.py  (77 lines)
+MODULE: Where do the Tier-1 milliseconds go?
+    def sweep(store)
+        
+
+## scripts\_smoke_dp.py  (59 lines)
+MODULE: Ad-hoc smoke test for the Tier-1 DP against real cached telemetry.
+
+## scripts\pre_cache.py  (85 lines)
+MODULE: Pre-cache every demo race so the whole pipeline runs offline.
+    def main(argv) -> int
+        
+
+## scripts\run_replay.py  (163 lines)
+MODULE: Offline replay: compare RaceIQ vs Greedy vs Conservative on one circuit.
+    def _physics_frontier(harvest_mj_per_lap) -> ParetoFrontier
+        A simple, defensible energy<->time frontier for a circuit.
+    def _real_frontier(event, harvest) -> tuple
+        Build the frontier from REAL cached telemetry where possible.
+    def main(argv) -> int
+        
+
+## scripts\run_validation.py  (132 lines)
+MODULE: Run the full validation suite (spec Section 7) and print a report.
+    def main(argv) -> int
+        
+
+## tests\conftest.py  (126 lines)
+MODULE: Shared fixtures for the RaceIQ test suite.
+    def _cache_present() -> bool
+        True when at least one 2026 session has been pre-cached.
+    def rules() -> RulesConfig  # @pytest.fixture(scope='session')
+        Loaded FIA 2026 rules (no network, no cache).
+    def _synthetic_segments(rules) -> List[Segment]
+        A deterministic 3 km lap: braking zone, exit, straight, coast.
+    def synthetic_segments(rules) -> List[Segment]  # @pytest.fixture(scope='session')
+        Cache-free stand-in lap for solver and ledger tests.
+    def cached_events() -> List[str]  # @pytest.fixture(scope='session')
+        Events that actually have telemetry in the local cache.
+    def replay(cached_events, rules)  # @pytest.fixture(scope='session')
+        Replay of the first cached event, or ``None`` when nothing is cached.
+    def real_segments(replay) -> Optional[List[Segment]]  # @pytest.fixture(scope='session')
+        10 m segments from real cached telemetry, or ``None``.
+
+## tests\test_baselines.py  (92 lines)
+MODULE: Phase 8 tests: baseline comparison (RaceIQ vs Greedy vs Conservative).
+    def _frontier()
+        
+    def test_greedy_attacks_more_than_conservative()
+        
+    def test_conservative_preserves_more_soc()
+        
+    def test_raceiq_produces_valid_plan_each_lap()
+        
+    def test_compare_returns_all_three()
+        
+    def test_compare_table_rows()
+        
+    def test_low_harvest_circuit_runs()
+        
+    def test_raceiq_beats_baselines_in_pack()
+        In a pack (repeatedly within the Detection Gap) RaceIQ wins on time:
+
+## tests\test_clipping.py  (158 lines)
+MODULE: Tests for clipping / superclipping detection (inference/clipping.py).
+    def _synthetic_lap(n, clip_start, clip_end)
+        Build a lap where samples [clip_start, clip_end] are flat-out at near
+    def test_detector_persistence_needed()
+        
+    def test_detector_reset()
+        
+    def test_flags_none_returns_empty()
+        
+    def test_flags_short_input()
+        
+    def test_flags_scales_throttle_0_100()
+        
+    def test_flags_uses_time_column()
+        
+    def test_flags_known_region_precision_recall()
+        Phase 10 seed: detector must recover the injected clipping region.
+    def test_summary_empty()
+        
+    def test_summary_no_clipping()
+        
+    def test_summary_with_clipping()
+        
+    def test_events_contiguous_runs()
+        
+
+## tests\test_config.py  (121 lines)
+MODULE: Phase 0 tests: config loading and FIA constant derivation.
+    def test_config_dir_exists()
+        
+    def test_rules_core_constants()
+        
+    def test_power_to_propel_rampdown()
+        
+    def test_fuel_flow_limit()
+        
+    def test_event_configs()
+        
+    def test_shanghai_event_note()
+        
+    def test_bahrain_unverified_template()
+        
+    def test_ev_bus_config()
+        
+    def test_circuits_registry()
+        
+    def test_hmm_priors_shape_and_stochasticity()
+        
+    def test_missing_config_raises(monkeypatch, tmp_path)
+        
+
+## tests\test_contract.py  (118 lines)
+MODULE: Tests for the frontend JSON contract (src/raceiq/ui/contract.py).
+    def normal_payload()  # @fixture
+        
+    def trap_payload()  # @fixture
+        
+    def test_top_level_keys(normal_payload)
+        
+    def test_json_roundtrips(normal_payload)
+        
+    def test_tower_has_22_rows(normal_payload)
+        
+    def test_normal_is_go_attack(normal_payload)
+        
+    def test_trap_flips_to_hold(trap_payload)
+        
+    def test_belief_shape(normal_payload)
+        
+    def test_comparison_names_raceiq(trap_payload)
+        
+    def test_frames_are_plain_arrays(normal_payload)
+        
+    def test_meta_names_our_team_and_cars(normal_payload)
+        
+    def test_grid_rows_are_complete_and_ordered(normal_payload)
+        
+    def test_working_shows_the_calculation(normal_payload)
+        
+    def test_real_grid_is_flagged_unedited()
+        
+    def test_baku_is_flagged_as_simulation()
+        
+
+## tests\test_ev_bus.py  (117 lines)
+MODULE: Tests for the EV-bus transfer solver (Phase 9).
+    def _solver()
+        
+    def _state(**kw)
+        
+    def test_recommend_returns_valid_recommendation()
+        
+    def test_low_soc_triggers_charge_protection()
+        
+    def test_recoverable_low_soc_is_feasible()
+        
+    def test_behind_schedule_with_charge_attacks()
+        
+    def test_comfortably_ahead_harvests()
+        
+    def test_attack_recovers_schedule_faster_than_harvest()
+        
+    def test_energy_saved_vs_attack_baseline_is_nonneg_for_harvest()
+        
+    def test_projected_soc_monotonic_in_charge()
+        
+    def test_per_stop_plan_length_matches_stops()
+        
+    def test_descent_adds_regen()
+        
+    def test_recommend_is_deterministic()
+        
+
+## tests\test_grid.py  (133 lines)
+MODULE: Tests for the real 2026 grid registry (src/raceiq/ui/grid.py).
+    def test_canonical_lineup_is_a_full_2026_field()
+        
+    def test_haas_has_exactly_two_cars()
+        
+    def test_build_grid_is_complete_and_ordered(circuit)  # @pytest.mark.parametrize('circuit', DEMO_CIRCUITS)
+        
+    def test_every_grid_has_both_haas_cars(circuit)  # @pytest.mark.parametrize('circuit', DEMO_CIRCUITS)
+        
+    def test_real_telemetry_circuits_have_real_pace()
+        Melbourne / Shanghai / Monza were cached, so pace must be measured.
+    def test_bahrain_and_baku_fall_back_and_are_flagged()
+        
+    def test_fallback_order_is_not_alphabetical()
+        An alphabetical grid would be meaningless - guard against regression.
+    def test_fallback_gaps_are_realistic()
+        A 22-car field separated by 0.15 s each is not a race.
+    def test_car_ahead_and_row_lookup()
+        
+    def test_apply_edits_reorders_and_flags()
+        
+    def test_apply_edits_gap_override()
+        
+    def test_load_lineup_returns_real_teams()
+        
+    def test_circuit_status_reads_config()
+        
+    def test_demo_circuits_match_the_five_tracked_events()
+        
+
+## tests\test_ingest.py  (207 lines)
+MODULE: Phase 1 tests: ingest (FastF1 cache + OpenF1 + offline degradation).
+    def _has_cache() -> bool
+        
+    def _cached(event) -> bool
+        
+    def test_data_dirs_exist()
+        
+    def test_openf1_fetch_degrades_offline(monkeypatch)
+        A network failure must yield an empty frame, never an exception.
+    def test_openf1_parses_csv(monkeypatch)
+        
+    def test_openf1_local_roundtrip(tmp_path, monkeypatch)
+        
+    def test_session_key_for_uses_config_no_network(monkeypatch)
+        circuits.json resolves keys without touching the network.
+    def test_manifest_roundtrip(tmp_path, monkeypatch)
+        
+    def test_pre_cache_reports_failure_without_raising(tmp_path, monkeypatch)
+        An unknown circuit must be reported, not crash the runner.
+    def test_load_melbourne_session()  # @needs_cache,needs_melbourne
+        
+    def test_driver_info_has_teams()  # @needs_cache,needs_melbourne
+        
+    def test_lap_telemetry_channels()  # @needs_cache,needs_melbourne
+        
+    def test_lap_telemetry_resample_uniform()  # @needs_cache,needs_melbourne
+        
+    def test_telemetry_distance_covers_lap()  # @needs_cache,needs_melbourne
+        
+    def test_missing_lap_returns_empty()  # @needs_cache,needs_melbourne
+        
+    def test_all_required_events_cached()  # @needs_cache
+        
+
+## tests\test_ledger.py  (207 lines)
+MODULE: Phase 3 tests: the FIA compliance ledger.
+    def _seg(i, kind, speed) -> Segment
+        
+    def _plan(deploy_mj, harvest_mj, peak_kw, n, overtake_mode, **meta) -> DeploymentPlan
+        
+    def test_legal_plan_passes(rules)
+        
+    def test_soc_window_violation(rules)
+        
+    def test_harvest_cap_violation(rules)
+        
+    def test_deploy_cap_violation(rules)
+        
+    def test_overtake_mode_grants_bonus_energy(rules)
+        Overtake Mode adds +0.5 MJ to the deployment allowance.
+    def test_power_to_propel_violation_at_speed(rules)
+        
+    def test_boost_cap_violation(rules)
+        
+    def test_start_speed_rule_only_applies_on_lap_one(rules)
+        
+    def test_pit_gain_and_torque_violations(rules)
+        
+    def test_slew_rate_violation(rules)
+        
+    def test_check_power_profile_matches_manual_plan(rules)
+        
+    def test_board_rows_and_certificate_are_text_only(rules)
+        
+    def test_rule_labels_cover_every_check(rules)
+        
+    def test_every_rule_can_fail(rules)
+        Each rule must be reachable - a rule that can never fail is dead code.
+    def test_ledger_on_dp_plan(rules, real_segments)  # @needs_cache
+        The plan Tier-1 actually proposes must clear the compliance ledger.
+    def test_ledger_is_rejecting_not_scoring(rules)
+        An illegal plan returns passed=False; it is not given a soft penalty.
+
+## tests\test_opponent_belief.py  (141 lines)
+MODULE: Tests for the 8-state opponent HMM (inference/opponent_belief.py).
+    def _belief()
+        
+    def test_prior_sums_to_one()
+        
+    def test_update_returns_valid_belief()
+        
+    def test_prior_unaffected_before_first_observation()
+        
+    def test_emission_likelihood_in_unit_range()
+        
+    def test_compute_emissions_shape()
+        
+    def test_aero_zone_emissions_trigger_trap_path()
+        Emissions consistent with a *conserver* rival (slow in the speed trap,
+    def test_batch_runs_over_sequence()
+        
+    def test_belief_accessors()
+        
+    def test_invalid_state_count_rejected()
+        
+
+## tests\test_overtake_ev.py  (254 lines)
+MODULE: Phase 5 tests: Overtake EV engine + PassModel.
+    def _belief(p_ld, p_lh, p_ot, trap)
+        Build a Belief with chosen marginals (probs normalised for safety).
+    def _ctx(**kw)
+        
+    def test_go_when_pass_likely_and_legal()
+        
+    def test_trap_forces_hold_regardless_of_ev()
+        
+    def test_illegal_forces_hold_and_penalty()
+        
+    def test_ineligible_when_gap_exceeds_detection()
+        
+    def test_default_points_gain_when_no_position()
+        
+    def test_position_gain_uses_points_table()
+        
+    def test_repayment_higher_on_low_harvest_circuit()
+        Monza (low harvest) must cost more repayment time than Baku (high).
+    def test_decision_has_full_breakdown_fields()
+        
+    def test_as_dict_roundtrip()
+        
+    def test_feature_names_count()
+        
+    def test_heuristic_is_deterministic_and_bounded()
+        
+    def test_fit_runs_and_predicts_in_unit_interval()
+        
+    def test_fitted_model_ranks_small_gap_above_large()
+        
+    def test_untrained_uses_heuristic()
+        
+    def test_heuristic_matches_documented_calibration()
+        The heuristic's documented reference case must land near 0.80.
+    def test_heuristic_has_usable_dynamic_range()
+        A hard bet must be clearly less likely than an easy one (not saturated).
+
+## tests\test_racecast.py  (95 lines)
+MODULE: Tests for the full-race simulation frames (src/raceiq/ui/racecast.py).
+    def cast()  # @pytest.fixture(scope='module')
+        
+    def test_racecast_has_one_frame_per_lap(cast)
+        
+    def test_every_frame_has_all_22_cars(cast)
+        
+    def test_racecast_is_for_haas(cast)
+        
+    def test_soc_stays_inside_the_window_and_is_not_degenerate(cast)
+        Regression: an unbalanced energy model drained every car to 0 %.
+    def test_positions_change_as_the_race_progresses(cast)
+        Cars must actually race - the order cannot be frozen.
+    def test_haas_frames_carry_the_priced_bet(cast)
+        
+    def test_risk_reward_ratio_is_consistent(cast)
+        
+    def test_action_matches_go_flag(cast)
+        
+    def test_as_dict_is_json_serialisable(cast)
+        
+    def test_cars_expose_telemetry_for_the_hover_card(cast)
+        
+
+## tests\test_scenario.py  (336 lines)
+MODULE: Phase 7 tests: the Streamlit-facing scenario builder (`raceiq.ui.scenario`).
+    def test_build_scenario_returns_full_contract()
+        
+    def test_tower_is_twenty_two_rows()
+        
+    def test_tower_positions_are_strictly_ordered()
+        
+    def test_intervals_are_monotonically_increasing()
+        A timing tower is cumulative: P2 can never be closer than P1.
+    def test_estimated_soc_stays_inside_the_rules_window()
+        
+    def test_ers_modes_are_drawn_from_known_postures()
+        
+    def test_grid_matches_2026_entry_list_size()
+        
+    def test_team_colours_are_hex()
+        
+    def test_build_scenario_is_deterministic()
+        
+    def test_different_seeds_change_soc_but_not_contract()
+        
+    def test_clean_rival_does_not_raise_the_trap_flag()
+        
+    def test_trap_flag_is_raised_when_rival_conserves_in_aero_zone()
+        
+    def test_trap_flips_the_recommendation_to_hold()
+        The headline demo: identical situation, rival's hidden intent changes the call.
+    def test_trap_reduces_pass_probability()
+        
+    def test_trap_reduces_expected_value()
+        
+    def test_decision_exposes_a_human_readable_why_line()
+        
+    def test_ego_and_rival_are_distinct_drivers()
+        
+    def test_rival_is_the_car_directly_ahead()
+        The bet is always priced against the car in front.
+    def test_real_grid_is_honest_and_focus_gap_makes_the_bet_live()
+        The real grid is never manipulated; editing it is what prices the bet.
+    def test_scenario_is_built_for_our_team_haas()
+        RaceIQ is the Haas pit wall: we advise a Haas car, not a generic P3.
+    def test_top5_returns_five_names()
+        
+    def test_compliance_board_has_nine_rules()
+        
+    def test_compliance_rows_carry_rule_id_status_and_detail()
+        
+    def test_mpc_plan_is_rule_compliant()
+        The plan we show on the pit wall must actually be legal.
+    def test_posture_is_one_of_the_four_modes()
+        
+    def test_posture_carries_a_horizon_and_alternatives()
+        
+    def test_every_demo_circuit_builds(event)  # @pytest.mark.parametrize('event', ['Melbourne', 'Bahrain', 'Shanghai', 'Monza', 'Baku'])
+        
+    def test_harvest_potential_is_carried_through()
+        
+    def test_high_harvest_circuit_is_at_least_as_aggressive_as_low()
+        Baku (7.1 MJ) should never recommend a more conservative posture than Monza (3.3).
+    def test_ego_index_selects_the_row()
+        
+    def test_soc_history_has_lap_column_plus_driver_series()
+        
+    def test_soc_history_covers_many_laps()
+        
+    def test_soc_history_is_bounded_by_the_window()
+        
+    def test_speed_trace_has_required_columns()
+        
+    def test_speed_trace_is_physically_plausible()
+        
+    def test_speed_trace_clipping_flags_are_boolean()
+        
+    def test_speed_trace_distance_increases()
+        
+    def test_comparison_includes_all_three_strategies()
+        
+    def test_raceiq_is_the_fastest_baseline()
+        
+    def test_raceiq_beats_greedy()
+        
+    def test_watermark_is_present_and_mentions_estimate()
+        
+    def test_no_emoji_anywhere_in_scenario_strings()
+        
+
+## tests\test_soc_observer.py  (401 lines)
+MODULE: Phase 2 tests: segmentation, SoC observer, ERS mode and clipping.
+    def _segments(rules, n) -> list
+        
+    def _lap_frame(rules, n) -> pd.DataFrame
+        A synthetic but physical lap: a fast flat-out straight with brake zones.
+    def _frame_segments(frame, rules)
+        Realistic segmentation of `_lap_frame` so the observer behaves physically.
+    def test_brake_and_harvest_energy(rules)
+        
+    def test_steady_state_speed_gain_is_bounded(rules)
+        The nonlinear drag solve must not predict +70 m/s mid-corner.
+    def test_deploy_gain_monotone_in_power_and_positive_in_energy(rules)
+        
+    def test_deploy_gain_horizon_compounds(rules)
+        A longer horizon must pay back more than a single isolated segment.
+    def test_observer_soc_stays_in_window(rules)
+        
+    def test_observer_harvest_never_exceeds_fia_cap(rules)
+        
+    def test_soc_state_percentage_consistency(rules)
+        
+    def test_ers_classifier_labels(rules)
+        
+    def test_clipping_needs_full_throttle_and_flat_speed(rules)
+        
+    def test_clipping_ignores_cars_below_their_own_top_speed(rules)
+        A car merely at terminal velocity in a slow corner is not clipping.
+    def test_clipping_detector_object(rules)
+        
+    def test_observer_matches_published_harvest(rules, replay)  # @needs_cache
+        Melbourne brake recovery should land near the published ~2.9 MJ/lap.
+    def test_field_soc_is_in_window_and_spread(replay, rules)  # @needs_cache
+        
+    def test_observer_does_not_saturate(replay, rules)  # @needs_cache
+        Every car pinned at 100% would mean the observer is not observing.
+    def test_demand_duty_defaults_to_the_drivers_full_request(rules)
+        Regression: demand duty must not be pre-scaled to what is affordable.
+    def test_demand_duty_and_sustainable_duty_are_not_conflated(rules)
+        `duty` tracks the driver's demand; `sustainable_duty` does not.
+    def test_high_demand_produces_clipping(rules)
+        A driver who asks for everything must sometimes be denied.
+    def test_low_demand_produces_no_clipping(rules)
+        ...and one who asks for almost nothing never is.
+    def test_predicted_clipping_increases_with_demand(rules)
+        
+    def test_summary_reports_both_duties(rules)
+        
+    def test_observable_clip_frac_is_a_fraction(rules)
+        
+    def test_fit_duty_to_observed_converges(rules)
+        Bisection must improve the match between predicted and observed clipping.
+    def test_fit_duty_sets_the_observers_duty(rules)
+        
+    def test_fit_duty_is_deterministic(rules)
+        
+    def test_fit_duty_handles_empty_telemetry(rules)
+        
+    def test_fit_does_not_clobber_the_demand_duty(rules)
+        `fit()` profiles the sustainable plan; it must not disable clipping.
+    def test_observable_mask_marks_the_top_of_the_speed_range()
+        
+    def test_observable_mask_normalises_percent_throttle()
+        
+
+## tests\test_tier1_dp.py  (226 lines)
+MODULE: Phase 4 tests: Tier-1 DP and the Pareto frontier.
+    def test_frontier_is_monotonic_and_dominance_filtered()
+        
+    def test_frontier_lookup_roundtrip()
+        
+    def test_every_action_is_legal(synthetic_segments, rules)
+        
+    def test_coast_is_always_available(synthetic_segments, rules)
+        A car in a braking zone with a full battery must still have a legal move.
+    def test_no_deployment_under_braking(synthetic_segments, rules)
+        
+    def test_phase_durations_break_at_braking(synthetic_segments)
+        
+    def test_dp_frontier_monotonic_and_bounded(synthetic_segments, rules)
+        
+    def test_dp_respects_start_soc(synthetic_segments, rules)
+        A emptier battery at the start must cap the spendable energy.
+    def test_dp_deterministic(synthetic_segments, rules)
+        
+    def test_dp_soc_stays_inside_window(synthetic_segments, rules)
+        No reachable end state may sit outside the usable window.
+    def test_dp_solve_under_10ms(synthetic_segments, rules)
+        Spec: Tier-1 DP runs in single-digit milliseconds.
+    def test_tier1dp_caches_and_reuses_program(synthetic_segments, rules)
+        
+    def test_recovered_plan_is_legal(synthetic_segments, rules)
+        
+    def test_frontier_point_count_honours_soc_bins(synthetic_segments, rules)
+        
+    def test_dp_on_real_circuit(real_segments, rules)  # @needs_cache
+        
+    def test_dp_under_10ms_on_real_circuit(real_segments, rules)  # @needs_cache
+        
+    def test_exchange_rate_orders_circuits_by_drag(rules, cached_events)  # @needs_cache
+        Monza (low drag, terminal velocity) must value energy less than Melbourne.
+
+## tests\test_tier2_mpc.py  (135 lines)
+MODULE: Phase 6 tests: Tier-2 MPC posture optimiser.
+    def _frontier()
+        
+    def _belief(trap, p_ld, p_lh, p_ot)
+        
+    def _state(**kw)
+        
+    def test_recommend_returns_valid_posture()
+        
+    def test_circuit_ablation_baku_vs_monza()
+        Spec requirement: policy must change with harvest potential.
+    def test_low_soc_does_not_attack_and_rebuilds_reserve()
+        A near-empty battery must not be attacked; the optimiser protects SoC.
+    def test_trap_blocks_attack()
+        A counter-harvest trap ahead must not be attacked.
+    def test_attack_when_rival_empty_and_no_trap()
+        A genuinely empty rival (Lderate) with no trap keeps us offensive.
+    def test_horizon_scoring_changes_with_laps()
+        
+    def test_needs_nonempty_frontier()
+        
+
+## tests\test_ui_app.py  (108 lines)
+MODULE: Phase 7 smoke tests: the Streamlit app itself (`raceiq.ui.main`).
+    def app() -> AppTest  # @pytest.fixture(scope='module')
+        
+    def test_app_runs_without_exceptions(app)
+        
+    def test_all_three_tabs_are_present(app)
+        
+    def test_charts_render(app)
+        
+    def test_css_was_injected_with_every_placeholder_substituted()
+        `_CSS` is a string.Template; an unsubstituted `$x` would render literally.
+    def test_no_emoji_in_rendered_markdown(app)
+        
+    def test_watermark_is_rendered(app)
+        
+    def test_timing_tower_renders_all_twenty_two_cars(app)
+        
+    def test_compliance_board_renders(app)
+        
+    def test_decision_card_shows_go_for_clean_rival(app)
+        
+    def test_trap_variant_renders_a_hold()
+        Re-run the app with the trap armed and confirm HOLD reaches the screen.
+    def test_ev_bus_tab_renders_a_posture(app)
+        
+
+## tests\test_validation.py  (110 lines)
+MODULE: Phase 10 tests: the validation suite (spec Section 7).
+    def test_rule_closure_soc_stays_in_window()
+        
+    def test_rule_closure_reports_no_breaches()
+        
+    def test_clipping_recovers_injected_region()
+        
+    def test_pass_model_auc_beats_target()
+        
+    def test_circuit_ablation_changes_policy()
+        
+    def test_baseline_report_raceiq_wins()
+        
+    def test_physics_frontier_is_monotonic()
+        
+    def test_synthetic_lap_has_clipping_region()
+        
+    def test_run_all_returns_every_check()
+        
+    def test_observer_calibration_check_runs_or_skips()
+        
+    def test_run_all_includes_observer_calibration()
+        

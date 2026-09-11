@@ -1,0 +1,71 @@
+{
+  "_comment": "Analytically-initialised parameters for the 8-state opponent HMM. NO training is performed (no ground-truth SoC/ERS labels exist publicly). Values are domain-knowledge priors in the spirit of arXiv:2603.01290 Tables 1/2/8, and are exposed here so the belief can be re-derived under different assumptions. Hidden state = (ERS in {H, M, Lharvest, Lderate}) x (Overtake in {available, spent}).",
+  "states": [
+    "H|OT_avail", "H|OT_spent",
+    "M|OT_avail", "M|OT_spent",
+    "Lharvest|OT_avail", "Lharvest|OT_spent",
+    "Lderate|OT_avail", "Lderate|OT_spent"
+  ],
+  "ers_states": ["H", "M", "Lharvest", "Lderate"],
+  "overtake_states": ["available", "spent"],
+
+  "initial": {
+    "H": 0.25, "M": 0.35, "Lharvest": 0.20, "Lderate": 0.20,
+    "p_overtake_available": 0.6
+  },
+
+  "transitions": {
+    "_comment": "Row-stochastic over the 4 ERS bins, per lap. Asymmetry is deliberate: Lharvest can return to M/H once the driver burns the built-up reserve, Lderate cannot bypass recovery (it must harvest first).",
+    "H":         {"H": 0.60, "M": 0.34, "Lharvest": 0.03, "Lderate": 0.03},
+    "M":         {"H": 0.22, "M": 0.50, "Lharvest": 0.18, "Lderate": 0.10},
+    "Lharvest":  {"H": 0.22, "M": 0.43, "Lharvest": 0.32, "Lderate": 0.03},
+    "Lderate":   {"H": 0.03, "M": 0.22, "Lharvest": 0.45, "Lderate": 0.30},
+    "p_overtake_spent_to_available": 0.45,
+    "p_overtake_available_to_spent": 0.25
+  },
+
+  "emissions": {
+    "_comment": "Gaussian emissions: mean/sigma per ERS bin. Bernoulli for zaero (inferred Active Aero low-drag state).",
+    "dv_trap_kph": {
+      "_comment": "Speed-trap delta vs the circuit baseline for that car. Strongly negative when the rival is empty (Lderate) or saving (Lharvest); near zero when the battery is healthy.",
+      "H": {"mean": 1.5, "sigma": 2.5},
+      "M": {"mean": 0.0, "sigma": 2.5},
+      "Lharvest": {"mean": -5.0, "sigma": 3.0},
+      "Lderate": {"mean": -7.5, "sigma": 3.0}
+    },
+    "delta_throttle": {
+      "_comment": "Fraction of the straight spent at full throttle while the speed is flat or falling (super-clipping fraction). THE discriminator between Lharvest (low) and Lderate (high).",
+      "H": {"mean": 0.05, "sigma": 0.06},
+      "M": {"mean": 0.15, "sigma": 0.10},
+      "Lharvest": {"mean": 0.18, "sigma": 0.12},
+      "Lderate": {"mean": 0.62, "sigma": 0.16}
+    },
+    "delta_bbrake_m": {
+      "_comment": "Brake-point delta vs baseline [m]. Harvesting cars brake earlier to lengthen the recovery window.",
+      "H": {"mean": 0.0, "sigma": 8.0},
+      "M": {"mean": -4.0, "sigma": 9.0},
+      "Lharvest": {"mean": -22.0, "sigma": 12.0},
+      "Lderate": {"mean": -2.0, "sigma": 9.0}
+    },
+    "speed_variance": {
+      "_comment": "Variance of the speed trace over the straight. Low when the car is pinned at a cap (clipping / aero limited).",
+      "H": {"mean": 12.0, "sigma": 6.0},
+      "M": {"mean": 10.0, "sigma": 6.0},
+      "Lharvest": {"mean": 7.0, "sigma": 5.0},
+      "Lderate": {"mean": 4.0, "sigma": 4.0}
+    },
+    "zaero": {
+      "_comment": "P(inferred Active Aero in low-drag Straight Mode) - Bernoulli. A harvesting car that still runs low drag is the counter-harvest trap signature.",
+      "H": 0.75, "M": 0.65, "Lharvest": 0.70, "Lderate": 0.25
+    }
+  },
+
+  "trap": {
+    "_comment": "Counter-harvest trap: rival looks slow but is deliberately harvesting while running low-drag aero. Threshold on the HMM posterior.",
+    "p_Lharvest_threshold": 0.45,
+    "p_Lderate_ceiling": 0.30,
+    "require_zaero": true,
+    "require_in_aero_zone": true,
+    "min_posterior_margin": 0.15
+  }
+}

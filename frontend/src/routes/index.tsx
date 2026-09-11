@@ -1,0 +1,128 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { HaasPanel } from "@/components/raceiq/HaasPanel";
+import { MatchupCard } from "@/components/raceiq/MatchupCard";
+import { ProvenanceLegend, ProvenanceTag } from "@/components/raceiq/ProvenanceTag";
+import { ReplayBar } from "@/components/raceiq/ReplayBar";
+import { TimingGrid } from "@/components/raceiq/TimingGrid";
+import { TrackMap } from "@/components/raceiq/TrackMap";
+import { EMPTY, fmtGap, fmtPct } from "@/lib/raceiq/format";
+import { useRaceIQ } from "@/lib/raceiq/store";
+
+export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Live Race — RaceIQ" },
+      {
+        name: "description",
+        content:
+          "Follow the replay, see where every car is, and get one clear RaceIQ call for the Haas drivers.",
+      },
+      { property: "og:title", content: "Live Race — RaceIQ" },
+      {
+        property: "og:description",
+        content: "Race replay, 22-driver timing and a single RaceIQ recommendation for Haas.",
+      },
+    ],
+  }),
+  component: LiveRace,
+});
+
+function SelectedDriver() {
+  const { snapshot, selected, rival, setRival, driver: driverOf, stateOf } = useRaceIQ();
+  const state = stateOf(selected);
+  const driver = driverOf(selected);
+
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="eyebrow">Selected driver</p>
+        <ProvenanceTag kind={snapshot.positionsProvenance} />
+      </div>
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <div className="min-w-0">
+          <p className="data truncate text-base font-semibold">
+            {selected}
+            {driver.name ? ` · ${driver.name}` : ""}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{driver.team}</p>
+        </div>
+        <span
+          className="data shrink-0 rounded-lg border border-border px-2.5 py-1 text-sm"
+          style={{ color: driver.color }}
+        >
+          {state ? `P${state.position}` : EMPTY}
+        </span>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          {
+            k: "Gap to leader",
+            v: state?.position === 1 ? "leader" : fmtGap(state?.gapToLeader),
+          },
+          { k: "Gap ahead", v: state?.position === 1 ? EMPTY : fmtGap(state?.gapAhead) },
+          { k: "Battery (est.)", v: fmtPct(state?.soc) },
+          { k: "Energy state", v: state?.ersMode ?? EMPTY },
+        ].map((item) => (
+          <div key={item.k}>
+            <dt className="text-[11px] text-muted-foreground">{item.k}</dt>
+            <dd className="data text-sm">{item.v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <span className="text-[11px] text-muted-foreground">Compare against</span>
+        <select
+          value={rival}
+          onChange={(e) => setRival(e.target.value)}
+          aria-label="Comparison driver"
+          className="data rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px]"
+        >
+          {snapshot.drivers
+            .filter((d) => d.code !== selected)
+            .map((d) => (
+              <option key={d.code} value={d.code}>
+                P{d.position} {d.code}
+              </option>
+            ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function LiveRace() {
+  const { snapshot } = useRaceIQ();
+
+  return (
+    <main className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="sr-only">RaceIQ live race replay</h1>
+      <ReplayBar />
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <TrackMap />
+        <div className="space-y-4">
+          <HaasPanel />
+          <MatchupCard />
+          <SelectedDriver />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4">
+        <TimingGrid />
+        <div className="panel p-4">
+          <p className="eyebrow">Where the numbers come from</p>
+          <div className="mt-2">
+            <ProvenanceLegend
+              kinds={[snapshot.positionsProvenance, snapshot.energyProvenance, "PROJECTED"]}
+            />
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Lap {snapshot.lap} of {snapshot.totalLaps}. Positions and gaps come from the replay
+            source; battery, energy mode and every recommendation are RaceIQ estimates, not
+            measurements.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,131 @@
+{
+  "_comment": "FIA 2026 Formula 1 power-unit + sporting constants. Single source of truth. Do NOT hard-code these values anywhere in src/. Sources: PU Technical Regulations Art. 5.4.1-5.4.13; Sporting Section B Issue 08 (Art. B7.1 Active Aero, B7.2 Overtake Mode); Technical Section C Issue 20 - both published 5 Aug 2026; post-Miami amendments applied.",
+  "regulation_issue": "Sporting B Issue 08 / Technical C Issue 20, published 5 Aug 2026",
+  "post_miami_amendments": true,
+  "soc_window_mj": 4.0,
+  "harvest_cap_mj_per_lap": 8.5,
+  "deploy_mj_per_lap": 8.5,
+  "mgu_k_max_kw": 350,
+  "power_to_propel_kw": "min(350, 1800 - 5*v_kph) if v_kph < 340 else (6900 - 20*v_kph if v_kph < 345 else 0)",
+  "power_to_propel_params": {
+    "_comment": "Numeric companion to power_to_propel_kw. FIA 2026 C5.2.8: 1800-5v below 340 km/h, 6900-20v from 340-345 km/h, zero above 345 km/h without Overtake Mode.",
+    "cap_kw": 350,
+    "intercept_kw": 1800,
+    "slope_kw_per_kph": 5.0,
+    "crossover_kph": 340.0,
+    "taper_intercept_kw": 6900,
+    "taper_slope_kw_per_kph": 20.0,
+    "cutoff_kph": 345.0,
+    "above_cutoff_kw": 0.0
+  },
+  "zone_deploy_kw": {
+    "key_acceleration": 350,
+    "other": 250
+  },
+  "race_boost_cap_kw": 150,
+  "base_deploy_kw": 200,
+  "superclip_max_kw": 350,
+  "quali_recharge_mj": 7.0,
+  "recharge_mj_per_lap": {
+    "_comment": "Art. 5.4.9 Recharge ceiling variants [MJ/lap]. Standard race ceiling is 8.5; event notes may reduce it; qualifying uses its own cap; the Stewards may grant a conditional +0.5 MJ allowance; Safety Car and low-grip running use reduced caps. Code must select via RulesConfig.recharge_limit_mj(), never hard-code.",
+    "standard": 8.5,
+    "reduced_event": 7.5,
+    "qualifying": 7.0,
+    "conditional_bonus": 0.5,
+    "safety_car": 6.0,
+    "low_grip": 7.0
+  },
+  "overtake_curve_kph": {
+    "_comment": "MGU-K limit with Overtake Mode active (C5.2.8 + B7.2): the 340-345 taper is extended so power reaches zero at 355 km/h instead of 345.",
+    "cutoff_kph": 355.0
+  },
+  "mgu_k_torque_nm": 500,
+  "torque_efficiency_correction": 0.97,
+  "start_min_speed_kph": 50,
+  "pit_stationary_gain_kj": 100,
+  "fuel_energy_flow_mj_per_h": 3000,
+  "fuel_rpm_formula_below_10500": "0.27*N + 165",
+  "fuel_rpm_params": {
+    "_comment": "Numeric companion to fuel_rpm_formula_below_10500: fuel mass flow limit [kg/h] = slope*rpm + intercept, for rpm below the knee.",
+    "slope_kg_per_h_per_rpm": 0.27,
+    "intercept_kg_per_h": 165.0,
+    "knee_rpm": 10500
+  },
+  "non_ers_store_kj": 300,
+  "slew_rate_kw_per_s": 100,
+  "mguh_deleted": true,
+  "detection_gap_s": 1.0,
+  "overtake_bonus_mj": 0.5,
+  "overtake_speed_kph": {
+    "attacker_full": 337,
+    "taper_zero": 355,
+    "leader_taper_start": 290
+  },
+  "active_aero": {
+    "proximity_gated": false,
+    "transition_ms": 400,
+    "disabled_after_start_until_turn1": true
+  },
+  "drs_deleted": true,
+  "cars": 22,
+  "teams": 11,
+  "physics": {
+    "_comment": "Vehicle/environment model parameters used by the deterministic SoC observer and the Tier-1 DP. These are modelling assumptions, NOT FIA constants; they are configurable so the estimate can be re-derived under different assumptions.",
+    "car_mass_kg": 800.0,
+    "drag_coefficient_area": 1.5,
+    "air_density": 1.2,
+    "rolling_resistance_coeff": 0.02,
+    "regen_efficiency": 0.95,
+    "drivetrain_efficiency": 0.98,
+    "deploy_efficiency": 0.9,
+    "harvest_fraction_of_brake_energy": 0.28,
+    "_harvest_note": "Single calibration scalar. Set so that the observer's per-lap brake-only recovery at Melbourne matches the published figure of 2.9 MJ (f1briefing.com, 1 Jul 2026). It folds together rear-axle brake share, MGU-K power limiting and regen efficiency. Every other circuit's harvest then falls out of its own geometry.",
+    "superclip_time_penalty_s_per_mj": 0.35,
+    "soc_feedback_gain": 0.6,
+    "soc_target_frac": 0.25,
+    "clipping_throttle_min": 0.98,
+    "clipping_speed_delta_max_kph": 0.35,
+    "clipping_min_speed_kph": 150.0,
+    "clipping_min_speed_frac_of_max": 0.9,
+    "clipping_min_duration_s": 0.25
+  },
+  "dp": {
+    "_comment": "Tier-1 dynamic-programming discretisation. `soc_bins` is the public/reporting resolution (0.1 MJ over the 4 MJ window). `solver_oversample` makes the internal DP grid that many times finer (0.01 MJ): a 10 m segment carries ~0.03 MJ, which is a third of a reporting bin and cannot be rounded to one without destroying the energy accounting.",
+    "soc_bins": 40,
+    "actions_kw": [
+      0,
+      150,
+      250,
+      350
+    ],
+    "segment_length_m": 10.0,
+    "deploy_weight_by_kind": {
+      "_comment": "Share of the calibrated deployment duty applied by segment type. Teams deploy on the straights, so concentrating it there is what produces the ~2x-per-lap battery cycling.",
+      "straight": 2.2,
+      "exit": 0.5,
+      "coast": 0.15,
+      "brake": 0.0
+    },
+    "solver_oversample": 4
+  },
+  "points": {
+    "_comment": "2026 scoring used by the Overtake EV engine to price a position gain.",
+    "by_finish_position": {
+      "1": 25,
+      "2": 18,
+      "3": 15,
+      "4": 12,
+      "5": 10,
+      "6": 8,
+      "7": 6,
+      "8": 4,
+      "9": 2,
+      "10": 1
+    },
+    "default_position_gain_points": 2.0,
+    "lambda_illegal": 1000.0,
+    "repass_penalty_points": 1.0,
+    "repayment_points_per_second": 5.0,
+    "repayment_cost_per_lap_s": 0.4
+  }
+}

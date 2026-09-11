@@ -1,0 +1,62 @@
+{
+  "generated_utc": "2026-09-07T13:12:31.708299+00:00",
+  "sessions": {
+    "Bahrain": {
+      "cached_utc": "2026-09-07T13:12:31.699908+00:00",
+      "circuit": "Bahrain",
+      "error": "DataNotLoadedError: The data you are trying to access has not been loaded yet. See `Session.load`",
+      "fastf1": false,
+      "fastf1_event": "Bahrain",
+      "openf1_endpoints": [],
+      "openf1_session_key": 11261,
+      "session": "R",
+      "simulation_only": false,
+      "year": 2026
+    },
+    "Melbourne": {
+      "cached_utc": "2026-09-07T13:11:40.172793+00:00",
+      "circuit": "Melbourne",
+      "drivers": 20,
+      "event_name": "Melbourne",
+      "fastf1": true,
+      "fastf1_event": "Melbourne",
+      "openf1_endpoints": [],
+      "openf1_session_key": 11234,
+      "session": "R",
+      "simulation_only": false,
+      "telemetry_samples": 6244,
+      "total_laps": 58,
+      "year": 2026
+    },
+    "Monza": {
+      "cached_utc": "2026-09-07T13:12:13.154101+00:00",
+      "circuit": "Monza",
+      "drivers": 22,
+      "event_name": "Monza",
+      "fastf1": true,
+      "fastf1_event": "Monza",
+      "openf1_endpoints": [],
+      "openf1_session_key": 11361,
+      "session": "R",
+      "simulation_only": false,
+      "telemetry_samples": 6589,
+      "total_laps": 53,
+      "year": 2026
+    },
+    "Shanghai": {
+      "cached_utc": "2026-09-07T13:11:55.848932+00:00",
+      "circuit": "Shanghai",
+      "drivers": 18,
+      "event_name": "Shanghai",
+      "fastf1": true,
+      "fastf1_event": "Shanghai",
+      "openf1_endpoints": [],
+      "openf1_session_key": 11245,
+      "session": "R",
+      "simulation_only": false,
+      "telemetry_samples": 6572,
+      "total_laps": 56,
+      "year": 2026
+    }
+  }
+}

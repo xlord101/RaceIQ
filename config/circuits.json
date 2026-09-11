@@ -1,0 +1,73 @@
+{
+  "_comment": "Circuit registry. 'brake_harvest_potential_mj' is the brake-only recovery potential per lap used by the Baku-vs-Monza ablation (source: f1briefing.com, 1 Jul 2026 - Baku 7.1 MJ, Monza 3.3 MJ, Melbourne 2.9 MJ). Where a circuit has not been raced yet in 2026 the 'data_status' field records that only a synthetic/geometry-derived lap is available and SIMULATION labelling is mandatory.",
+  "circuits": {
+    "Melbourne": {
+      "name": "Albert Park Circuit",
+      "year": 2026,
+      "openf1_session_key": 11234,
+      "fastf1_event": "Melbourne",
+      "lap_length_m": 5278.0,
+      "corners": 14,
+      "brake_harvest_potential_mj": 2.9,
+      "data_status": "cached_2026",
+      "simulation_only": false
+    },
+    "Shanghai": {
+      "name": "Shanghai International Circuit",
+      "year": 2026,
+      "openf1_session_key": 11245,
+      "fastf1_event": "Shanghai",
+      "lap_length_m": 5451.0,
+      "corners": 16,
+      "brake_harvest_potential_mj": 5.4,
+      "data_status": "cached_2026",
+      "simulation_only": false
+    },
+    "Bahrain": {
+      "name": "Bahrain International Circuit",
+      "year": 2026,
+      "openf1_session_key": 11261,
+      "fastf1_event": "Bahrain",
+      "lap_length_m": 5412.0,
+      "corners": 15,
+      "brake_harvest_potential_mj": 4.8,
+      "data_status": "no_fastf1_telemetry",
+      "simulation_only": false
+    },
+    "Monza": {
+      "name": "Autodromo Nazionale Monza",
+      "year": 2026,
+      "openf1_session_key": 11361,
+      "fastf1_event": "Monza",
+      "lap_length_m": 5793.0,
+      "corners": 11,
+      "brake_harvest_potential_mj": 3.3,
+      "data_status": "cached_2026",
+      "simulation_only": false
+    },
+    "Baku": {
+      "name": "Baku City Circuit",
+      "year": 2026,
+      "openf1_session_key": 11377,
+      "fastf1_event": "Baku",
+      "lap_length_m": 6003.0,
+      "corners": 20,
+      "brake_harvest_potential_mj": 7.1,
+      "data_status": "not_raced_yet_2026",
+      "simulation_only": true
+    },
+    "Spa": {
+      "name": "Circuit de Spa-Francorchamps",
+      "year": 2026,
+      "openf1_session_key": 11334,
+      "fastf1_event": "Spa",
+      "lap_length_m": 7004.0,
+      "corners": 19,
+      "brake_harvest_potential_mj": 6.2,
+      "data_status": "cached_2026",
+      "simulation_only": false
+    }
+  },
+  "demo_order": ["Melbourne", "Shanghai", "Monza", "Bahrain", "Baku"],
+  "ablation_pair": ["Monza", "Baku"]
+}
