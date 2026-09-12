@@ -1,6 +1,12 @@
 import type { Provenance } from "@/lib/raceiq/contracts";
 
-const COPY: Record<Provenance, { label: string; hint: string; cls: string }> = {
+const DEFAULT_COPY = {
+  label: "INFERRED",
+  hint: "Estimated or derived by RaceIQ.",
+  cls: "text-inferred border-inferred/40 bg-inferred/10",
+};
+
+const COPY: Record<string, { label: string; hint: string; cls: string }> = {
   SAMPLE: {
     label: "SAMPLE",
     hint: "Demo replay data — stands in until a recorded session is connected.",
@@ -11,14 +17,29 @@ const COPY: Record<Provenance, { label: string; hint: string; cls: string }> = {
     hint: "Recorded in the session. Not changed by RaceIQ.",
     cls: "text-actual border-actual/40 bg-actual/10",
   },
+  OBSERVED: {
+    label: "OBSERVED",
+    hint: "Directly observed from telemetry or race timing.",
+    cls: "text-actual border-actual/40 bg-actual/10",
+  },
+  DERIVED: {
+    label: "DERIVED",
+    hint: "Calculated deterministically from observations.",
+    cls: "text-actual border-actual/40 bg-actual/10",
+  },
   INFERRED: {
     label: "INFERRED",
-    hint: "Estimated by RaceIQ. Not directly measured.",
+    hint: "Estimated by RaceIQ observer or model. Not directly measured.",
     cls: "text-inferred border-inferred/40 bg-inferred/10",
   },
   PROJECTED: {
     label: "PROJECTED",
     hint: "A what-if projection. This never happened.",
+    cls: "text-projected border-projected/40 bg-projected/10",
+  },
+  COUNTERFACTUAL: {
+    label: "COUNTERFACTUAL",
+    hint: "Counterfactual branch seeded from an immutable historical state.",
     cls: "text-projected border-projected/40 bg-projected/10",
   },
 };
@@ -27,10 +48,10 @@ export function ProvenanceTag({
   kind,
   className = "",
 }: {
-  kind: Provenance;
+  kind: Provenance | string;
   className?: string;
 }) {
-  const c = COPY[kind];
+  const c = (kind && COPY[kind]) || DEFAULT_COPY;
   return (
     <span
       title={c.hint}
@@ -44,16 +65,19 @@ export function ProvenanceTag({
 export function ProvenanceLegend({
   kinds = ["SAMPLE", "INFERRED", "PROJECTED"],
 }: {
-  kinds?: Provenance[];
+  kinds?: (Provenance | string)[];
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-      {kinds.map((k) => (
-        <span key={k} className="flex items-center gap-2">
-          <ProvenanceTag kind={k} />
-          {COPY[k].hint}
-        </span>
-      ))}
+      {kinds.map((k) => {
+        const c = (k && COPY[k]) || DEFAULT_COPY;
+        return (
+          <span key={k} className="flex items-center gap-2">
+            <ProvenanceTag kind={k} />
+            {c.hint}
+          </span>
+        );
+      })}
     </div>
   );
 }

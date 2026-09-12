@@ -189,6 +189,10 @@ export interface RaceIQAnalysisSnapshot {
       modes: string[];
       kinds: string[];
       clips: boolean[];
+      distance?: number[] | undefined;
+      speed?: number[] | undefined;
+      throttle?: number[] | undefined;
+      brake?: number[] | undefined;
     } | undefined;
   };
 

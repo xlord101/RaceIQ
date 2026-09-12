@@ -213,7 +213,31 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     bool(tr["clipping_flag"].iloc[i]) if "clipping_flag" in tr.columns else False
                     for i in indices
                 ]
+                sub_distance = [
+                    round(float(tr["distance_m"].iloc[i]), 1) if "distance_m" in tr.columns else 0.0
+                    for i in indices
+                ]
+                sub_speed = [
+                    round(float(tr["speed_kph"].iloc[i]), 1) if "speed_kph" in tr.columns else 0.0
+                    for i in indices
+                ]
+                throttle_max = float(tr["throttle"].max()) if "throttle" in tr.columns and not tr["throttle"].isna().all() else 1.0
+                throttle_scale = 100.0 if throttle_max <= 1.0 else 1.0
+                sub_throttle = [
+                    round(float(tr["throttle"].iloc[i]) * throttle_scale, 1) if "throttle" in tr.columns else 0.0
+                    for i in indices
+                ]
+                brake_max = float(tr["brake"].max()) if "brake" in tr.columns and not tr["brake"].isna().all() else 1.0
+                brake_scale = 100.0 if brake_max <= 1.0 else 1.0
+                sub_brake = [
+                    round(float(tr["brake"].iloc[i]) * brake_scale, 1) if "brake" in tr.columns else 0.0
+                    for i in indices
+                ]
                 sub_lap = {
+                    "distance": sub_distance,
+                    "speed": sub_speed,
+                    "throttle": sub_throttle,
+                    "brake": sub_brake,
                     "soc": sub_soc,
                     "modes": sub_modes,
                     "kinds": sub_kinds,

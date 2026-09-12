@@ -591,35 +591,45 @@ function getAnalysisSnapshot(
 
   const hmm = rec?.hmmBelief;
 
-  return {
-    raceState: {
-      circuitId: circuit.id,
-      circuitName: circuit.name,
-      lap: currentLapNum,
-      totalLaps: factual?.totalLaps ?? snapshot.totalLaps,
-      time: snapshot.time,
-      driver: code,
-      rival: rivalCode,
-      position: driverState.position,
-      gapAhead: driverState.gapAhead ?? null,
-      cumulativeGapToLeader: driverState.gapToLeader ?? null,
-      lapFraction: driverState.lapFraction ?? 0,
-    },
-    telemetry: {
-      available: Boolean(factualDriver?.subLap),
-      provenance: snapshot.positionsProvenance,
-      detectionWindow: {
-        detectionLine: circuit.detectionLine ?? 0.52,
-        activationLine: circuit.activationLine ?? 0.63,
-        inWindow: driverState.inDetectionWindow ?? false,
+    const subLap = factualDriver?.subLap;
+    const subLapIdx = subLap && typeof driverState.lapFraction === "number"
+      ? Math.min(15, Math.max(0, Math.floor(driverState.lapFraction * 16)))
+      : 0;
+
+    return {
+      raceState: {
+        circuitId: circuit.id,
+        circuitName: circuit.name,
+        lap: currentLapNum,
+        totalLaps: factual?.totalLaps ?? snapshot.totalLaps,
+        time: snapshot.time,
+        driver: code,
+        rival: rivalCode,
+        position: driverState.position,
+        gapAhead: driverState.gapAhead ?? null,
+        cumulativeGapToLeader: driverState.gapToLeader ?? null,
+        lapFraction: driverState.lapFraction ?? 0,
       },
-      straightContext: {
-        longestStraightM: 650.0,
-        closingSpeedKph: rec?.passFeatures?.closing_speed_kph,
-        detectionGapS: driverState.gapAhead ?? null,
+      telemetry: {
+        available: Boolean(subLap),
+        provenance: snapshot.positionsProvenance,
+        speed: subLap?.speed ? subLap.speed[subLapIdx] : undefined,
+        throttle: subLap?.throttle ? subLap.throttle[subLapIdx] : undefined,
+        brake: subLap?.brake ? subLap.brake[subLapIdx] : undefined,
+        distance: subLap?.distance ? subLap.distance[subLapIdx] : undefined,
+        relevantTrackSegment: subLap?.kinds ? subLap.kinds[subLapIdx] : undefined,
+        detectionWindow: {
+          detectionLine: circuit.detectionLine ?? 0.52,
+          activationLine: circuit.activationLine ?? 0.63,
+          inWindow: driverState.inDetectionWindow ?? false,
+        },
+        straightContext: {
+          longestStraightM: 650.0,
+          closingSpeedKph: rec?.passFeatures?.closing_speed_kph,
+          detectionGapS: driverState.gapAhead ?? null,
+        },
+        subLapCheckpoints: subLap,
       },
-      subLapCheckpoints: factualDriver?.subLap,
-    },
     energy: {
       soc: driverState.soc ?? 0.5,
       socTrend: driverState.socTrend ?? 0.0,
