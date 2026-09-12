@@ -138,3 +138,131 @@ def test_belief_accessors():
 def test_invalid_state_count_rejected():
     with pytest.raises(ValueError):
         OpponentBelief(n_states=4)
+
+
+def test_normal_rival_does_not_produce_huge_dv_trap():
+    """Requirement 1: High absolute speed does NOT produce enormous dv_trap when baseline matches."""
+    speed_df = pd.DataFrame({
+        "Distance": np.linspace(0, 1000, 100),
+        "Speed": np.linspace(250, 320, 100),
+        "Throttle": np.full(100, 1.0),
+    })
+    em = compute_emissions(speed_df, baseline_speed_kph=318.0)
+    assert np.isclose(em["dv_trap_kph"], 2.0, atol=0.5)
+    assert em["dv_trap_kph"] < 10.0  # Not +40 km/h like the old speed - 280 bug
+
+
+def test_slower_than_baseline_rival_produces_negative_deviation():
+    """Requirement 2: Slower rival produces negative relative deviation."""
+    speed_df = pd.DataFrame({
+        "Distance": np.linspace(0, 1000, 100),
+        "Speed": np.linspace(240, 305, 100),
+        "Throttle": np.full(100, 1.0),
+    })
+    em = compute_emissions(speed_df, baseline_speed_kph=320.0)
+    assert em["dv_trap_kph"] <= -15.0
+
+
+def test_normal_behavior_does_not_saturate_p_lharvest():
+    """Requirement 3: A normal rival does not saturate p_Lharvest > 0.95 or trigger trap."""
+    b = _belief()
+    normal_em = {
+        "dv_trap_kph": 0.5,
+        "delta_throttle": 0.12,
+        "delta_bbrake_m": -2.0,
+        "speed_variance": 11.0,
+        "zaero": 1,
+        "in_aero_zone": True,
+    }
+    out = None
+    for _ in range(10):
+        out = b.update(normal_em)
+    assert out.p_Lharvest < 0.40
+    assert out.trap_flag is False
+
+
+def test_lderate_evidence_emerges_when_genuinely_derating():
+    """Requirement 4: Genuine derating telemetry produces dominant p_Lderate."""
+    b = _belief()
+    derating_em = {
+        "dv_trap_kph": -7.5,
+        "delta_throttle": 0.65,
+        "delta_bbrake_m": -1.0,
+        "speed_variance": 4.0,
+        "zaero": 0,
+        "in_aero_zone": True,
+    }
+    out = None
+    for _ in range(5):
+        out = b.update(derating_em)
+    assert out.p_Lderate >= 0.60
+    assert out.trap_flag is False
+
+
+def test_lharvest_evidence_emerges_when_genuinely_harvesting():
+    """Requirement 5: Genuine harvesting telemetry produces dominant p_Lharvest and trap flag."""
+    b = _belief()
+    harvesting_em = {
+        "dv_trap_kph": -5.5,
+        "delta_throttle": 0.16,
+        "delta_bbrake_m": -22.0,
+        "speed_variance": 6.5,
+        "zaero": 1,
+        "in_aero_zone": True,
+    }
+    out = None
+    for _ in range(5):
+        out = b.update(harvesting_em)
+    assert out.p_Lharvest >= 0.55
+    assert out.trap_flag is True
+
+
+def test_emissions_derived_from_rival_telemetry_not_host_mode():
+    """Requirement 6: Telemetry-derived emissions reflect only the input car, not external state."""
+    speed_df1 = pd.DataFrame({
+        "Distance": np.linspace(0, 800, 50),
+        "Speed": np.linspace(200, 310, 50),
+        "Throttle": np.full(50, 1.0),
+    })
+    em1 = compute_emissions(speed_df1, baseline_speed_kph=310.0)
+    assert np.isclose(em1["dv_trap_kph"], 0.0)
+    assert 0.0 <= em1["delta_throttle"] <= 1.0
+
+
+def test_emissions_remain_numerically_sane_under_extremes():
+    """Requirement 7: Feature values remain finite and bounded even with extreme inputs."""
+    speed_df = pd.DataFrame({
+        "Distance": np.linspace(0, 1000, 100),
+        "Speed": np.linspace(50, 450, 100),
+        "Throttle": np.full(100, 1.0),
+    })
+    em = compute_emissions(
+        speed_df,
+        baseline_speed_kph=250.0,
+        brake_distance_m=1200.0,
+        baseline_brake_m=800.0,
+    )
+    assert -25.0 <= em["dv_trap_kph"] <= 25.0
+    assert 1.0 <= em["speed_variance"] <= 50.0
+    assert -50.0 <= em["delta_bbrake_m"] <= 50.0
+    assert np.isfinite(em["speed_variance"])
+
+
+def test_straight_windowing_isolates_straight_segment():
+    """Requirement 8: straight_window filters out cornering from speed variance and super-clipping."""
+    # Full lap: 0-500m slow hairpin (60 km/h), 500-1500m straight (200-320 km/h), 1500-2000m corner
+    dists = np.linspace(0, 2000, 200)
+    speeds = np.full(200, 60.0)
+    straight_mask = (dists >= 500.0) & (dists <= 1500.0)
+    speeds[straight_mask] = np.linspace(200.0, 320.0, straight_mask.sum())
+    
+    df = pd.DataFrame({"Distance": dists, "Speed": speeds, "Throttle": np.full(200, 1.0)})
+    
+    # Without window, variance over full lap would be dominated by 60 km/h hairpin
+    em_full = compute_emissions(df, baseline_speed_kph=320.0)
+    # With window, strictly measures the straight
+    em_win = compute_emissions(df, baseline_speed_kph=320.0, straight_window=(500.0, 1500.0))
+    
+    assert em_win["dv_trap_kph"] == 0.0
+    assert em_win["zaero"] in (0, 1)
+

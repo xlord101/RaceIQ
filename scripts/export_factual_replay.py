@@ -36,6 +36,7 @@ from raceiq.decision import OvertakeContext, OvertakeEV, PassModel
 from raceiq.inference.opponent_belief import OpponentBelief, compute_emissions
 from raceiq.pipeline import build_replay
 from raceiq.rules.ledger import ComplianceLedger
+from raceiq.track.segmentation import longest_straight
 from raceiq.types import DeploymentPlan, PlanSegment
 from raceiq.validation.metrics import physics_frontier
 
@@ -96,6 +97,26 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
     
     laps_data = replay.data.laps
     
+    ls = longest_straight(replay.segments)
+    straight_window = (float(ls[0]), float(ls[1])) if ls is not None else None
+
+    # Precompute reference baseline straight vmax and brake distance for all drivers
+    ref_baselines: Dict[str, Dict[str, Any]] = {}
+    for d, ref_tel in replay.telemetry.items():
+        if ref_tel is not None and not ref_tel.empty:
+            if straight_window is not None:
+                w_mask = (ref_tel["Distance"] >= straight_window[0]) & (ref_tel["Distance"] <= straight_window[1])
+                vmax = float(ref_tel.loc[w_mask, "Speed"].max()) if w_mask.sum() > 0 else float(ref_tel["Speed"].max())
+                brk_mask = (ref_tel["Distance"] >= straight_window[1] - 50.0) & (ref_tel.get("Brake", 0) > 0.1)
+                brk_dist = float(ref_tel.loc[brk_mask, "Distance"].iloc[0]) if brk_mask.sum() > 0 else None
+            else:
+                vmax = float(ref_tel["Speed"].max())
+                brk_dist = None
+            ref_baselines[d] = {"vmax": vmax, "brake_dist": brk_dist}
+
+    all_vmaxes = [b["vmax"] for b in ref_baselines.values() if "vmax" in b and b["vmax"] > 100.0]
+    field_median_vmax = float(np.median(all_vmaxes)) if all_vmaxes else 315.0
+
     for lap in range(1, total_laps + 1):
         lap_rows = laps_data[laps_data["LapNumber"] == lap].copy()
         if lap_rows.empty:
@@ -224,19 +245,29 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                 hmm = hmm_filters[pair_key]
                 
                 rival_speed_trace = replay.speed_trace(rival_code, lap)
+                rival_base = ref_baselines.get(rival_code, {})
+                base_vmax = rival_base.get("vmax", field_median_vmax)
+                base_brk = rival_base.get("brake_dist")
+
+                brk_dist = None
+                if not rival_speed_trace.empty and straight_window is not None and "Brake" in rival_speed_trace.columns:
+                    brk_mask = (rival_speed_trace["Distance"] >= straight_window[1] - 50.0) & (rival_speed_trace["Brake"] > 0.1)
+                    if brk_mask.sum() > 0:
+                        brk_dist = float(rival_speed_trace.loc[brk_mask, "Distance"].iloc[0])
+
+                emissions = compute_emissions(
+                    speed_trace=rival_speed_trace,
+                    baseline_speed_kph=base_vmax,
+                    brake_distance_m=brk_dist,
+                    baseline_brake_m=base_brk,
+                    in_aero_zone=bool(gapAhead < 1.0),
+                    straight_window=straight_window,
+                )
+                belief = hmm.update(emissions)
+
                 speed = 285.0
                 if not rival_speed_trace.empty:
                     speed = float(rival_speed_trace["Speed"].max())
-                    
-                emissions = {
-                    "dv_trap_kph": float(speed - 280.0),
-                    "delta_throttle": 0.15 if mode == "HARVEST" else 0.50,
-                    "delta_bbrake_m": -10.0 if mode == "HARVEST" else 0.0,
-                    "speed_variance": 12.0,
-                    "zaero": 1 if gapAhead < 1.0 else 0,
-                    "in_aero_zone": bool(gapAhead < 1.0),
-                }
-                belief = hmm.update(emissions)
                 
                 # PassModel 12 features
                 ctx = OvertakeContext(

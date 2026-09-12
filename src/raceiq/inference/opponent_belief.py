@@ -21,7 +21,7 @@ Prior art: arXiv:2603.01290 (cited, framing adopted, implementation original).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -220,13 +220,29 @@ def compute_emissions(
     brake_distance_m: Optional[float] = None,
     baseline_brake_m: Optional[float] = None,
     in_aero_zone: bool = True,
+    straight_window: Optional[Tuple[float, float]] = None,
 ) -> Dict[str, float]:
     """Derive HMM emission values from public telemetry for one rival.
 
     All inputs are public channels (speed, throttle, brake, distance). The
     Active Aero flag has **no** public channel, so ``zaero`` is *inferred* from
     whether the car's top speed on the straight is high relative to its own
-    cornering speed - a low-drag signature.
+    straight baseline without excessive clipping - a low-drag signature.
+
+    Parameters
+    ----------
+    speed_trace:
+        Telemetry frame or dict with Distance, Speed, and optional Throttle.
+    baseline_speed_kph:
+        Reference top speed for this driver/circuit on the straight.
+    brake_distance_m:
+        Actual braking onset distance [m] at the end of the straight.
+    baseline_brake_m:
+        Baseline braking onset distance [m] at the end of the straight.
+    in_aero_zone:
+        Whether the car is currently in an Active Aero low-drag zone.
+    straight_window:
+        Optional (start_m, end_m) distance window isolating the straight segment.
 
     Returns
     -------
@@ -253,25 +269,42 @@ def compute_emissions(
             "speed_variance": 10.0, "zaero": 0, "in_aero_zone": bool(in_aero_zone),
         }
 
+    # Localize observation features to straight window if provided
+    if straight_window is not None and len(dist) > 0:
+        mask = (dist >= straight_window[0]) & (dist <= straight_window[1])
+        if mask.sum() >= 3:
+            speed = speed[mask]
+            dist = dist[mask]
+            thr = thr[mask]
+
     vmax = float(np.nanmax(speed))
     base = float(baseline_speed_kph) if baseline_speed_kph else float(np.nanmedian(speed))
 
-    # super-clipping fraction: flat out but speed not rising
+    # Relative speed-trap deviation vs reference baseline, clipped to physical range
+    dv_trap_kph = float(np.clip(vmax - base, -25.0, 25.0))
+
+    # Super-clipping fraction: flat out (thr >= 0.98) but speed not rising (dv <= 0.35)
     dv = np.diff(speed, prepend=speed[0])
     flat = (thr >= 0.98) & (dv <= 0.35) & (speed >= 150.0)
     delta_throttle = float(flat.mean())
 
+    # Speed variance localized to straight, clipped to avoid out-of-distribution log-penalties
+    var_raw = float(np.nanvar(speed))
+    speed_variance = float(np.clip(var_raw, 1.0, 50.0))
+
+    # Inferred Active Aero state on straight
     zaero = int(vmax >= 0.95 * base and delta_throttle < 0.35) if base > 0 else 0
 
+    # Brake onset delta vs baseline
     bb = 0.0
     if brake_distance_m is not None and baseline_brake_m is not None:
-        bb = float(brake_distance_m) - float(baseline_brake_m)
+        bb = float(np.clip(float(brake_distance_m) - float(baseline_brake_m), -50.0, 50.0))
 
     return {
-        "dv_trap_kph": float(vmax - base),
+        "dv_trap_kph": dv_trap_kph,
         "delta_throttle": delta_throttle,
         "delta_bbrake_m": bb,
-        "speed_variance": float(np.nanvar(speed)),
+        "speed_variance": speed_variance,
         "zaero": zaero,
         "in_aero_zone": bool(in_aero_zone),
     }
