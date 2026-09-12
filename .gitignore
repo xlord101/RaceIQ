@@ -12,3 +12,4 @@ data/cache/
 *.ff1pkl
 *.sqlite
 *.mp4
+scratch/

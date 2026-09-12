@@ -7,6 +7,9 @@ import { CIRCUIT_LIST, type CircuitId } from "./circuits";
 import type {
   DriverIdentity,
   ErsMode,
+  HmmBeliefState,
+  OvertakeEvBreakdown,
+  PassModelFeatures,
   Posture,
   ProvenancedFactor,
   RaceIQAdapter,
@@ -16,6 +19,8 @@ import type {
   RaceIQSnapshot,
   RaceIQWhatIfBranch,
   RiskLevel,
+  TimelineSample,
+  RaceIQAnalysisSnapshot,
 } from "./contracts";
 import { DRIVER_BY_CODE } from "./drivers";
 
@@ -60,6 +65,9 @@ interface FactualDriver {
         opponentResponse: string;
       }
     >;
+    hmm_belief?: HmmBeliefState;
+    pass_features?: PassModelFeatures;
+    ev_breakdown?: OvertakeEvBreakdown;
   };
 }
 
@@ -350,6 +358,9 @@ function getRecommendation(
     energyCost: rec.energyCost,
     constraints: rec.constraints,
     factors: factors as ProvenancedFactor[],
+    hmmBelief: rec.hmm_belief,
+    passFeatures: rec.pass_features,
+    evBreakdown: rec.ev_breakdown,
   };
 }
 
@@ -460,6 +471,205 @@ function getWhatIf(
   }
 }
 
+function getAnalysisSnapshot(
+  circuitId: string,
+  time: number,
+  code: string,
+): RaceIQAnalysisSnapshot | undefined {
+  const snapshot = getSnapshotAt(circuitId, time);
+  const driverState = snapshot.byCode[code];
+  if (!driverState) return undefined;
+
+  const circuitKey = circuitId.toLowerCase();
+  const factual = FACTUAL_DATA[circuitKey];
+  const circuit = CIRCUITS_BY_ID[circuitKey] ?? BACKEND_CIRCUITS[0]!;
+
+  const baseLapTime = factual?.baseLapTime || 90.0;
+  const currentLapNum = snapshot.lap;
+  const lapIndex = Math.min((factual?.laps.length ?? 1) - 1, Math.max(0, currentLapNum - 1));
+  const lapData = factual?.laps[lapIndex];
+  const factualDriver = lapData?.drivers.find((d) => d.code === code);
+  const rec = getRecommendation(snapshot, code);
+
+  // Determine rival: car directly ahead in position, or ahead in snapshot
+  const aheadInSnapshot = snapshot.drivers.find((d) => d.position === driverState.position - 1);
+  const rivalCode = aheadInSnapshot?.code ?? null;
+  const rivalDriver = rivalCode ? snapshot.byCode[rivalCode] : undefined;
+
+  // Build timelines across all completed laps up to current lap
+  const history: TimelineSample[] = [];
+  const socOverTime: { lap: number; time: number; soc: number }[] = [];
+  const ersModeOverTime: { lap: number; time: number; mode: ErsMode }[] = [];
+  const clippingEventsOverTime: { lap: number; time: number; clipping: boolean }[] = [];
+  const gapOverTime: {
+    lap: number;
+    time: number;
+    gapAhead: number | null;
+    gapToLeader: number | null;
+  }[] = [];
+  const pPassOverTime: { lap: number; time: number; pPass: number }[] = [];
+  const strategicEvOverTime: { lap: number; time: number; ev: number }[] = [];
+  const recommendationOverTime: { lap: number; time: number; posture: Posture }[] = [];
+  const hmmProbabilitiesOverTime: {
+    lap: number;
+    time: number;
+    pLderate: number;
+    pLharvest: number;
+    pOtAvail: number;
+  }[] = [];
+
+  if (factual?.laps) {
+    const maxLapIdx = Math.min(factual.laps.length - 1, lapIndex);
+    for (let l = 0; l <= maxLapIdx; l++) {
+      const lData = factual.laps[l];
+      if (!lData) continue;
+      const lDriver = lData.drivers.find((d) => d.code === code);
+      if (!lDriver) continue;
+
+      const tLap = (lData.lap - 1) * baseLapTime;
+      const soc = typeof lDriver.soc === "number" ? lDriver.soc : 0.5;
+      const ersMode = (lDriver.ersMode ?? "BALANCED") as ErsMode;
+      const isClipping = ersMode === "CLIPPING" || Boolean(lDriver.subLap?.clips?.some(Boolean));
+      const lRec = lDriver.recommendation;
+
+      const sample: TimelineSample = {
+        lap: lData.lap,
+        time: tLap,
+        soc,
+        ersMode,
+        isClipping,
+        gapAhead: lDriver.gapAhead,
+        gapToLeader: lDriver.gapToLeader,
+        pPass: lRec?.passProbability ?? null,
+        strategicEv: lRec?.overtakeEv ?? null,
+        posture: lRec?.posture ?? null,
+        pLderate: lRec?.hmm_belief?.p_Lderate ?? null,
+        pLharvest: lRec?.hmm_belief?.p_Lharvest ?? null,
+        pOtAvail: lRec?.hmm_belief?.p_ot_avail ?? null,
+        trapFlag: lRec?.hmm_belief?.trap_flag ?? null,
+      };
+
+      history.push(sample);
+      socOverTime.push({ lap: lData.lap, time: tLap, soc });
+      ersModeOverTime.push({ lap: lData.lap, time: tLap, mode: ersMode });
+      clippingEventsOverTime.push({ lap: lData.lap, time: tLap, clipping: isClipping });
+      gapOverTime.push({
+        lap: lData.lap,
+        time: tLap,
+        gapAhead: lDriver.gapAhead,
+        gapToLeader: lDriver.gapToLeader,
+      });
+
+      if (typeof lRec?.passProbability === "number") {
+        pPassOverTime.push({ lap: lData.lap, time: tLap, pPass: lRec.passProbability });
+      }
+      if (typeof lRec?.overtakeEv === "number") {
+        strategicEvOverTime.push({ lap: lData.lap, time: tLap, ev: lRec.overtakeEv });
+      }
+      if (lRec?.posture) {
+        recommendationOverTime.push({ lap: lData.lap, time: tLap, posture: lRec.posture });
+      }
+      if (lRec?.hmm_belief) {
+        hmmProbabilitiesOverTime.push({
+          lap: lData.lap,
+          time: tLap,
+          pLderate: lRec.hmm_belief.p_Lderate ?? 0,
+          pLharvest: lRec.hmm_belief.p_Lharvest ?? 0,
+          pOtAvail: lRec.hmm_belief.p_ot_avail ?? 0,
+        });
+      }
+    }
+  }
+
+  // Precomputed counterfactual branches
+  const whatIfBranches: Record<Posture, RaceIQWhatIfBranch> = {
+    ATTACK: getWhatIf(snapshot, code, "ATTACK")!,
+    HOLD: getWhatIf(snapshot, code, "HOLD")!,
+    DEFEND: getWhatIf(snapshot, code, "DEFEND")!,
+    HARVEST: getWhatIf(snapshot, code, "HARVEST")!,
+  };
+
+  const hmm = rec?.hmmBelief;
+
+  return {
+    raceState: {
+      circuitId: circuit.id,
+      circuitName: circuit.name,
+      lap: currentLapNum,
+      totalLaps: factual?.totalLaps ?? snapshot.totalLaps,
+      time: snapshot.time,
+      driver: code,
+      rival: rivalCode,
+      position: driverState.position,
+      gapAhead: driverState.gapAhead ?? null,
+      cumulativeGapToLeader: driverState.gapToLeader ?? null,
+      lapFraction: driverState.lapFraction ?? 0,
+    },
+    telemetry: {
+      available: Boolean(factualDriver?.subLap),
+      provenance: snapshot.positionsProvenance,
+      detectionWindow: {
+        detectionLine: circuit.detectionLine ?? 0.52,
+        activationLine: circuit.activationLine ?? 0.63,
+        inWindow: driverState.inDetectionWindow ?? false,
+      },
+      straightContext: {
+        longestStraightM: 650.0,
+        closingSpeedKph: rec?.passFeatures?.closing_speed_kph,
+        detectionGapS: driverState.gapAhead ?? null,
+      },
+      subLapCheckpoints: factualDriver?.subLap,
+    },
+    energy: {
+      soc: driverState.soc ?? 0.5,
+      socTrend: driverState.socTrend ?? 0.0,
+      ersMode: driverState.ersMode ?? "BALANCED",
+      isClipping: driverState.ersMode === "CLIPPING",
+      energyProvenance: snapshot.energyProvenance,
+      harvestCapMj: factual?.harvestCapMj ?? 8.5,
+      harvestPotentialMj: rec?.passFeatures?.circuit_harvest_potential_mj ?? 3.0,
+    },
+    opponentInference: {
+      rivalCode,
+      rivalSoc: rivalDriver?.soc ?? null,
+      rivalErsMode: rivalDriver?.ersMode ?? null,
+      pLderate: hmm?.p_Lderate ?? null,
+      pLharvest: hmm?.p_Lharvest ?? null,
+      pOtAvail: hmm?.p_ot_avail ?? null,
+      trapFlag: hmm?.trap_flag ?? false,
+      trapProbability: hmm?.trap_prob ?? null,
+      hmmBelief: hmm,
+      provenance: "INFERRED",
+    },
+    passModel: rec?.passFeatures
+      ? {
+          features: rec.passFeatures,
+          pPass: rec.passProbability ?? rec.passFeatures.p_pass ?? 0,
+          modelProvenance: "HEURISTIC",
+        }
+      : undefined,
+    overtakeEv: rec?.evBreakdown
+      ? {
+          breakdown: rec.evBreakdown,
+          strategicEv: rec.overtakeEv ?? rec.evBreakdown.strategic_ev,
+          recommendation: rec.posture,
+        }
+      : undefined,
+    whatIfBranches,
+    timelines: {
+      socOverTime,
+      ersModeOverTime,
+      clippingEventsOverTime,
+      gapOverTime,
+      pPassOverTime,
+      strategicEvOverTime,
+      recommendationOverTime,
+      hmmProbabilitiesOverTime,
+      history,
+    },
+  };
+}
+
 export const backendAdapter: RaceIQAdapter = {
   id: "raceiq-backend-replay",
   kind: "recorded",
@@ -470,4 +680,6 @@ export const backendAdapter: RaceIQAdapter = {
   snapshotAt: getSnapshotAt,
   recommend: getRecommendation,
   whatIf: getWhatIf,
+  analysisSnapshotAt: getAnalysisSnapshot,
 };
+

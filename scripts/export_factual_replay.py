@@ -355,6 +355,65 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     },
                 }
                 
+                # 8-state HMM posterior
+                state_names = [
+                    "H|OT_avail",
+                    "H|OT_spent",
+                    "M|OT_avail",
+                    "M|OT_spent",
+                    "Lharvest|OT_avail",
+                    "Lharvest|OT_spent",
+                    "Lderate|OT_avail",
+                    "Lderate|OT_spent",
+                ]
+                hmm_belief = {
+                    name: round(float(belief.probs[idx]), 4)
+                    for idx, name in enumerate(state_names)
+                }
+                hmm_belief["p_ot_avail"] = round(float(belief.p_overtake_available), 4)
+                hmm_belief["p_Lderate"] = round(float(belief.p_Lderate), 4)
+                hmm_belief["p_Lharvest"] = round(float(belief.p_Lharvest), 4)
+                hmm_belief["trap_flag"] = bool(belief.trap_flag)
+                hmm_belief["trap_prob"] = round(float(belief.trap_prob), 4)
+
+                # Canonical 12 PassModel features
+                pass_features = {
+                    "gap_ahead_s": round(float(ctx.gap_ahead_s), 3),
+                    "closing_speed_kph": round(float(ctx.closing_speed_kph), 1),
+                    "straight_remaining_m": round(float(ctx.straight_remaining_m), 1),
+                    "tyre_age_delta_laps": round(float(ctx.tyre_age_delta_laps), 1),
+                    "own_est_soc": round(float(ctx.own_est_soc), 3),
+                    "rival_est_soc": round(float(ctx.rival_est_soc), 3),
+                    "rival_P_Lderate": round(float(belief.p_Lderate), 4),
+                    "rival_P_Lharvest": round(float(belief.p_Lharvest), 4),
+                    "trap_flag": bool(belief.trap_flag),
+                    "overtake_mode_active": bool(ctx.overtake_mode_active),
+                    "circuit_harvest_potential_mj": round(float(ctx.circuit_harvest_potential_mj), 2),
+                    "laps_remaining": int(ctx.laps_remaining),
+                    "p_pass": round(float(dec.p_pass), 3),
+                    "model_status": "HEURISTIC",
+                }
+
+                # Overtake EV breakdown
+                pts_cfg = rules.points
+                repayment_s = dec.repayment_cost_s
+                repayment_pts = dec.breakdown.get(
+                    "repayment_pts",
+                    repayment_s * float(pts_cfg.get("repayment_points_per_second", 5.0)),
+                )
+                ev_breakdown = {
+                    "p_pass": round(float(dec.p_pass), 3),
+                    "points_gain": round(float(dec.points_gain), 2),
+                    "repass_cost_pts": round(float(dec.breakdown.get("repass_cost_pts", dec.repass_risk * dec.points_gain)), 2),
+                    "repayment_cost_s": round(float(repayment_s), 2),
+                    "repayment_cost_pts": round(float(repayment_pts), 2),
+                    "illegal_penalty": round(float(dec.breakdown.get("illegal_penalty", 0.0)), 2),
+                    "strategic_ev": round(float(dec.ev), 2),
+                    "recommendation": dec.recommendation.upper(),
+                    "repass_risk": round(float(dec.repass_risk), 3),
+                    "why": dec.why,
+                }
+
                 drv_state["recommendation"] = {
                     "posture": dec.recommendation.upper(),
                     "confidence": 0.88,
@@ -365,6 +424,9 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     "constraints": constraints,
                     "factors": factors,
                     "whatIfBranches": what_if_branches,
+                    "hmm_belief": hmm_belief,
+                    "pass_features": pass_features,
+                    "ev_breakdown": ev_breakdown,
                 }
                 
             drivers_state.append(drv_state)

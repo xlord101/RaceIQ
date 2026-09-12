@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { raceiqReplayAdapter } from "./raceiq-replay-adapter";
+import { backendAdapter, simulationAdapter } from "./adapter";
 import type {
   DriverIdentity,
   Posture,
@@ -18,6 +18,7 @@ import type {
   RaceIQRecommendation,
   RaceIQSnapshot,
   RaceIQWhatIfBranch,
+  RaceIQAnalysisSnapshot,
 } from "./contracts";
 
 interface RaceIQContextValue {
@@ -42,16 +43,18 @@ interface RaceIQContextValue {
   stateOf: (code: string) => RaceIQDriverState | undefined;
   recommendationFor: (code: string) => RaceIQRecommendation | undefined;
   whatIf: (code: string, action: Posture) => RaceIQWhatIfBranch | undefined;
+  analysisSnapshot?: RaceIQAnalysisSnapshot | undefined;
+  analysisFor?: (code: string) => RaceIQAnalysisSnapshot | undefined;
 }
 
 const RaceIQContext = createContext<RaceIQContextValue | null>(null);
 
 export function RaceIQProvider({
   children,
-  adapter = raceiqReplayAdapter,
+  adapter = backendAdapter,
 }: {
   children: ReactNode;
-  /** Swap this for a RaceIQ backend adapter — no component changes required. */
+  /** Real backend adapter is the default; simulation is available as fallback */
   adapter?: RaceIQAdapter;
 }) {
   const firstCircuit = adapter.circuits[0]!;
@@ -127,6 +130,8 @@ export function RaceIQProvider({
     stateOf: (code) => snapshot.byCode[code],
     recommendationFor: (code) => adapter.recommend?.(snapshot, code),
     whatIf: (code, action) => adapter.whatIf?.(snapshot, code, action),
+    analysisSnapshot: adapter.analysisSnapshotAt?.(circuit.id, time, selected),
+    analysisFor: (code) => adapter.analysisSnapshotAt?.(circuit.id, time, code),
   };
 
   return <RaceIQContext.Provider value={value}>{children}</RaceIQContext.Provider>;

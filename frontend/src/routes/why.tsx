@@ -65,7 +65,7 @@ function Section({
 }
 
 function Why() {
-  const { snapshot, selected, circuit, driver: driverOf, stateOf, recommendationFor } = useRaceIQ();
+  const { snapshot, selected, circuit, driver: driverOf, stateOf, recommendationFor, analysisSnapshot } = useRaceIQ();
   const state = stateOf(selected);
   const driver = driverOf(selected);
   const rec = recommendationFor(selected);
@@ -183,13 +183,28 @@ function Why() {
               </p>
               <p>
                 Trap flag:{" "}
-                {isNum(ahead.soc) && isNum(state?.soc)
-                  ? ahead.soc - (state?.soc ?? 0) > 0.12
-                    ? "possible — opponent holds more energy"
-                    : "none detected"
-                  : "not assessable without an energy estimate"}
+                <span className="data text-foreground">
+                  {analysisSnapshot?.opponentInference?.trapFlag
+                    ? "POSSIBLE TRAP — opponent deliberately saving in low-drag"
+                    : "NONE DETECTED"}
+                </span>
                 .
               </p>
+              {analysisSnapshot?.opponentInference?.hmmBelief && (
+                <div className="mt-3 border-t border-border pt-2 space-y-1.5">
+                  <p className="font-medium text-foreground">Full 8-State Opponent Posterior (Bayesian Filter):</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-[11px]">
+                    <div className="p-1.5 rounded bg-muted/30">H | OT Avail: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["H|OT_avail"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">H | OT Spent: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["H|OT_spent"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">M | OT Avail: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["M|OT_avail"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">M | OT Spent: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["M|OT_spent"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">Lharv | OT Avail: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["Lharvest|OT_avail"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">Lharv | OT Spent: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["Lharvest|OT_spent"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">Lderate | OT Avail: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["Lderate|OT_avail"])}</div>
+                    <div className="p-1.5 rounded bg-muted/30">Lderate | OT Spent: {fmtPct(analysisSnapshot.opponentInference.hmmBelief["Lderate|OT_spent"])}</div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p>Nothing within range to model.</p>
@@ -207,6 +222,42 @@ function Why() {
             against the time lost on a failed one, minus the energy spent.
           </p>
           <p>Projected energy cost of the move: {fmtPoints(rec?.energyCost)}.</p>
+
+          {analysisSnapshot?.passModel && (
+            <div className="mt-3 border-t border-border pt-2 space-y-1.5">
+              <p className="font-medium text-foreground">
+                PassModel 12 Canonical Features ({analysisSnapshot.passModel.modelProvenance}):
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 font-mono text-[11px]">
+                <div className="p-1.5 rounded bg-muted/30">gap_ahead: {analysisSnapshot.passModel.features.gap_ahead_s.toFixed(2)}s</div>
+                <div className="p-1.5 rounded bg-muted/30">closing_speed: {analysisSnapshot.passModel.features.closing_speed_kph.toFixed(1)} kph</div>
+                <div className="p-1.5 rounded bg-muted/30">straight_rem: {analysisSnapshot.passModel.features.straight_remaining_m.toFixed(0)}m</div>
+                <div className="p-1.5 rounded bg-muted/30">tyre_age_delta: {analysisSnapshot.passModel.features.tyre_age_delta_laps.toFixed(1)} laps</div>
+                <div className="p-1.5 rounded bg-muted/30">own_soc: {analysisSnapshot.passModel.features.own_est_soc.toFixed(2)} MJ</div>
+                <div className="p-1.5 rounded bg-muted/30">rival_soc: {analysisSnapshot.passModel.features.rival_est_soc.toFixed(2)} MJ</div>
+                <div className="p-1.5 rounded bg-muted/30">rival_P_Lderate: {fmtPct(analysisSnapshot.passModel.features.rival_P_Lderate)}</div>
+                <div className="p-1.5 rounded bg-muted/30">rival_P_Lharvest: {fmtPct(analysisSnapshot.passModel.features.rival_P_Lharvest)}</div>
+                <div className="p-1.5 rounded bg-muted/30">trap_flag: {analysisSnapshot.passModel.features.trap_flag ? "TRUE" : "FALSE"}</div>
+                <div className="p-1.5 rounded bg-muted/30">ot_mode_active: {analysisSnapshot.passModel.features.overtake_mode_active ? "TRUE" : "FALSE"}</div>
+                <div className="p-1.5 rounded bg-muted/30">harvest_potential: {analysisSnapshot.passModel.features.circuit_harvest_potential_mj.toFixed(1)} MJ</div>
+                <div className="p-1.5 rounded bg-muted/30">laps_remaining: {analysisSnapshot.passModel.features.laps_remaining}</div>
+              </div>
+            </div>
+          )}
+
+          {analysisSnapshot?.overtakeEv && (
+            <div className="mt-3 border-t border-border pt-2 space-y-1.5">
+              <p className="font-medium text-foreground">Overtake Strategic EV Breakdown:</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 font-mono text-[11px]">
+                <div className="p-1.5 rounded bg-muted/30">Points Gain: +{analysisSnapshot.overtakeEv.breakdown.points_gain.toFixed(1)} pts</div>
+                <div className="p-1.5 rounded bg-muted/30">Repass Risk: {fmtPct(analysisSnapshot.overtakeEv.breakdown.repass_risk)} (-{analysisSnapshot.overtakeEv.breakdown.repass_cost_pts.toFixed(1)} pts)</div>
+                <div className="p-1.5 rounded bg-muted/30">Repayment Time: {analysisSnapshot.overtakeEv.breakdown.repayment_cost_s.toFixed(2)}s (-{analysisSnapshot.overtakeEv.breakdown.repayment_cost_pts.toFixed(1)} pts)</div>
+                <div className="p-1.5 rounded bg-muted/30">Legality Penalty: {analysisSnapshot.overtakeEv.breakdown.illegal_penalty.toFixed(0)} pts</div>
+                <div className="p-1.5 rounded bg-muted/30 font-semibold text-foreground">Strategic EV: {analysisSnapshot.overtakeEv.strategicEv > 0 ? "+" : ""}{analysisSnapshot.overtakeEv.strategicEv.toFixed(2)}s</div>
+                <div className="p-1.5 rounded bg-muted/30 font-semibold text-foreground">Decision: {analysisSnapshot.overtakeEv.recommendation}</div>
+              </div>
+            </div>
+          )}
         </Section>
 
         <Section

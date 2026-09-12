@@ -18,6 +18,7 @@ import type {
   RaceIQRecommendation,
   RaceIQSnapshot,
   RaceIQWhatIfBranch,
+  RaceIQAnalysisSnapshot,
 } from "./contracts";
 
 interface RaceIQContextValue {
@@ -42,6 +43,8 @@ interface RaceIQContextValue {
   stateOf: (code: string) => RaceIQDriverState | undefined;
   recommendationFor: (code: string) => RaceIQRecommendation | undefined;
   whatIf: (code: string, action: Posture) => RaceIQWhatIfBranch | undefined;
+  analysisSnapshot?: RaceIQAnalysisSnapshot | undefined;
+  analysisFor?: (code: string) => RaceIQAnalysisSnapshot | undefined;
 }
 
 const RaceIQContext = createContext<RaceIQContextValue | null>(null);
@@ -127,6 +130,8 @@ export function RaceIQProvider({
     stateOf: (code) => snapshot.byCode[code],
     recommendationFor: (code) => adapter.recommend?.(snapshot, code),
     whatIf: (code, action) => adapter.whatIf?.(snapshot, code, action),
+    analysisSnapshot: adapter.analysisSnapshotAt?.(circuit.id, time, selected),
+    analysisFor: (code) => adapter.analysisSnapshotAt?.(circuit.id, time, code),
   };
 
   return <RaceIQContext.Provider value={value}>{children}</RaceIQContext.Provider>;
