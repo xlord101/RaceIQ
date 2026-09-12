@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { POSTURE_STYLE } from "@/components/raceiq/MatchupCard";
 import { ProvenanceTag } from "@/components/raceiq/ProvenanceTag";
 import type { Posture } from "@/lib/raceiq/contracts";
@@ -63,6 +64,72 @@ function SituationCard({
   );
 }
 
+type TagKind = "ACTUAL" | "INFERRED" | "APPROX" | "NOT_OBSERVED" | "MODEL";
+
+const HMM_STATES = [
+  "H|OT_avail",
+  "H|OT_spent",
+  "M|OT_avail",
+  "M|OT_spent",
+  "Lharvest|OT_avail",
+  "Lharvest|OT_spent",
+  "Lderate|OT_avail",
+  "Lderate|OT_spent",
+] as const;
+
+type HmmTable = {
+  "H|OT_avail": number;
+  "H|OT_spent": number;
+  "M|OT_avail": number;
+  "M|OT_spent": number;
+  "Lharvest|OT_avail": number;
+  "Lharvest|OT_spent": number;
+  "Lderate|OT_avail": number;
+  "Lderate|OT_spent": number;
+};
+
+function dominantHmmState(b: HmmTable): string {
+  let best: (typeof HMM_STATES)[number] = HMM_STATES[0];
+  for (const k of HMM_STATES) {
+    if (b[k] > b[best]) best = k;
+  }
+  return `${best} (${(b[best] * 100).toFixed(0)}%)`;
+}
+
+function Tag({ kind }: { kind: TagKind }) {
+  const cls: Record<TagKind, string> = {
+    ACTUAL: "border-actual/40 text-actual",
+    INFERRED: "border-inferred/40 text-inferred",
+    APPROX: "border-inferred/40 text-inferred",
+    NOT_OBSERVED: "border-border text-muted-foreground",
+    MODEL: "border-border text-foreground",
+  };
+  const label: Record<TagKind, string> = {
+    ACTUAL: "ACTUAL",
+    INFERRED: "INFERRED",
+    APPROX: "APPROX",
+    NOT_OBSERVED: "NOT OBSERVED",
+    MODEL: "MODEL",
+  };
+  return (
+    <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-mono tracking-wider ${cls[kind]}`}>
+      {label[kind]}
+    </span>
+  );
+}
+
+function CalcRow({ label, value, kind }: { label: string; value: string; kind: TagKind }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border/60 py-1 last:border-b-0">
+      <span className="min-w-0 truncate text-xs text-muted-foreground">{label}</span>
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="data text-xs font-medium tabular-nums">{value}</span>
+        <Tag kind={kind} />
+      </span>
+    </div>
+  );
+}
+
 function tyreShort(
   d: { tyre?: { compound?: string | null; ageLaps?: number | null } | null | undefined } | undefined,
 ): string {
@@ -89,6 +156,8 @@ function Why() {
     behindOf,
   } = useRaceIQ();
 
+  const [showCalc, setShowCalc] = useState(false);
+  const [showHmmTable, setShowHmmTable] = useState(false);
   const state = stateOf(selected);
   const driver = driverOf(selected);
   const rec = recommendationFor(selected);
@@ -103,6 +172,9 @@ function Why() {
   const energy = analysis?.energy;
   const soc = energy?.soc ?? state?.soc;
   const opp = analysis?.opponentInference;
+  const hmmBelief = opp?.hmmBelief;
+  const passFeatures = analysis?.passModel?.features;
+  const evBreakdown = analysis?.overtakeEv?.breakdown;
   const rivalCode = opp?.rivalCode ?? ahead?.code ?? null;
 
   const opponentSummary = !rivalCode
@@ -361,6 +433,178 @@ function Why() {
           ))}
         </ol>
       </section>
+      {/* 7 - SHOW CALCULATION (progressive disclosure, collapsed by default) */}
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setShowCalc((v) => !v)}
+          className="data rounded border border-border px-3 py-1.5 text-xs tracking-[0.12em] text-muted-foreground transition-colors hover:bg-accent"
+        >
+          {showCalc ? "HIDE CALCULATION" : "SHOW CALCULATION"}
+        </button>
+      </div>
+
+      {showCalc && (
+        <section className="panel border-border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="eyebrow">Calculation trail - this exact replay state</p>
+            <ProvenanceTag kind="INFERRED" />
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Every value below comes from the RaceIQ data prepared for this lap and driver. Nothing is recomputed in the browser.
+          </p>
+
+          {!analysis ? (
+            <p className="mt-3 text-sm text-muted-foreground">Calculation data unavailable for this state.</p>
+          ) : (
+            <div className="mt-4 grid gap-x-6 gap-y-4 lg:grid-cols-2">
+              {/* OBSERVED */}
+              <div>
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground">OBSERVED</p>
+                <div className="mt-2">
+                  <CalcRow label="Race position" value={state?.position !== undefined ? `P${state.position}` : EMPTY} kind="ACTUAL" />
+                  <CalcRow label="Gap ahead" value={state?.position === 1 ? "LEADER" : fmtGap(state?.gapAhead, 2)} kind="ACTUAL" />
+                  <CalcRow label="Gap behind" value={gapBehindText !== EMPTY ? gapBehindText : EMPTY} kind="ACTUAL" />
+                  <CalcRow label="Tyre" value={tyreShort(state)} kind="ACTUAL" />
+                  <CalcRow label="Lap" value={`${snapshot.lap} / ${snapshot.totalLaps}`} kind="ACTUAL" />
+                  <CalcRow
+                    label="Detection window"
+                    value={typeof state?.inDetectionWindow === "boolean" ? (state.inDetectionWindow ? "INSIDE" : "OUTSIDE") : EMPTY}
+                    kind="ACTUAL"
+                  />
+                  <CalcRow label="Speed" value={analysis.telemetry.available && typeof analysis.telemetry.speed === "number" ? `${Math.round(analysis.telemetry.speed)} kph` : EMPTY} kind="ACTUAL" />
+                  <CalcRow label="Throttle" value={analysis.telemetry.available && typeof analysis.telemetry.throttle === "number" ? `${Math.round(analysis.telemetry.throttle * 100)}%` : EMPTY} kind="ACTUAL" />
+                  <CalcRow label="Brake" value={analysis.telemetry.available && typeof analysis.telemetry.brake === "number" ? (analysis.telemetry.brake > 0 ? "ON" : "OFF") : EMPTY} kind="ACTUAL" />
+                </div>
+              </div>
+
+              {/* DERIVED */}
+              <div>
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground">DERIVED (RACEIQ ESTIMATES)</p>
+                <div className="mt-2">
+                  <CalcRow label="Estimated SoC" value={fmtPct(energy?.soc ?? state?.soc)} kind="INFERRED" />
+                  <CalcRow label="SoC trend" value={energy ? `${energy.socTrend >= 0 ? "+" : ""}${(energy.socTrend * 100).toFixed(1)} pt/lap` : EMPTY} kind="INFERRED" />
+                  <CalcRow label="ERS state" value={energy?.ersMode ?? EMPTY} kind="INFERRED" />
+                  <CalcRow label="Clipping" value={energy ? (energy.isClipping ? "DETECTED" : "none") : EMPTY} kind="INFERRED" />
+                  <CalcRow
+                    label="Closing speed"
+                    value={passFeatures ? `${passFeatures.closing_speed_kph.toFixed(1)} kph` : EMPTY}
+                    kind="APPROX"
+                  />
+                  <CalcRow
+                    label="Straight remaining"
+                    value={passFeatures ? `${Math.round(passFeatures.straight_remaining_m)} m` : EMPTY}
+                    kind="APPROX"
+                  />
+                  <CalcRow
+                    label="Tyre-age delta"
+                    value={passFeatures ? `${passFeatures.tyre_age_delta_laps.toFixed(1)} laps` : EMPTY}
+                    kind="INFERRED"
+                  />
+                </div>
+                <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                  Closing speed is an analytical approximation from sampled speed, and straight remaining is a static circuit estimate - neither is measured telemetry. Overtake Mode is not directly observed.
+                </p>
+              </div>
+
+              {/* OPPONENT INFERENCE */}
+              <div>
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground">OPPONENT INFERENCE (8-STATE HMM)</p>
+                <div className="mt-2">
+                  <CalcRow
+                    label="Dominant interpretation"
+                    value={hmmBelief ? dominantHmmState(hmmBelief) : EMPTY}
+                    kind="INFERRED"
+                  />
+                  <CalcRow label="Trap signal" value={opp?.trapFlag ? "YES - rival conserving" : "no"} kind="INFERRED" />
+                  <CalcRow label="P(Overtake available)" value={hmmBelief ? fmtPct(hmmBelief.p_ot_avail) : EMPTY} kind="INFERRED" />
+                  <CalcRow label="P(rival derated)" value={hmmBelief ? fmtPct(hmmBelief.p_Lderate ?? undefined) : EMPTY} kind="INFERRED" />
+                  <CalcRow label="P(rival harvesting)" value={hmmBelief ? fmtPct(hmmBelief.p_Lharvest ?? undefined) : EMPTY} kind="INFERRED" />
+                  <CalcRow label="Rival est. SoC" value={fmtPct(opp?.rivalSoc ?? undefined)} kind="INFERRED" />
+                </div>
+                {hmmBelief && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowHmmTable((v) => !v)}
+                      className="mt-2 text-[10px] tracking-wider text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      {showHmmTable ? "hide full 8-state table" : "show full 8-state table"}
+                    </button>
+                    {showHmmTable && (
+                      <div className="mt-1 grid grid-cols-2 gap-x-4">
+                        {HMM_STATES.map((k) => {
+                          const val = hmmBelief[k];
+                          return (
+                            <div key={k} className="flex justify-between border-b border-border/50 py-0.5">
+                              <span className="font-mono text-[10px] text-muted-foreground">{k}</span>
+                              <span className="data tabular-nums text-[10px]">
+                                {typeof val === "number" ? `${(val * 100).toFixed(1)}%` : EMPTY}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* PASS MODEL */}
+              <div>
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground">PASS MODEL - CANONICAL 12 FEATURES</p>
+                <div className="mt-2">
+                  {passFeatures ? (
+                    <>
+                      <CalcRow label="gap_ahead_s" value={passFeatures.gap_ahead_s.toFixed(2)} kind="ACTUAL" />
+                      <CalcRow label="closing_speed_kph" value={passFeatures.closing_speed_kph.toFixed(1)} kind="APPROX" />
+                      <CalcRow label="straight_remaining_m" value={passFeatures.straight_remaining_m.toFixed(0)} kind="APPROX" />
+                      <CalcRow label="tyre_age_delta_laps" value={passFeatures.tyre_age_delta_laps.toFixed(1)} kind="INFERRED" />
+                      <CalcRow label="own_est_soc (MJ)" value={passFeatures.own_est_soc.toFixed(2)} kind="INFERRED" />
+                      <CalcRow label="rival_est_soc (MJ)" value={passFeatures.rival_est_soc.toFixed(2)} kind="INFERRED" />
+                      <CalcRow label="rival_P_Lderate" value={passFeatures.rival_P_Lderate.toFixed(3)} kind="INFERRED" />
+                      <CalcRow label="rival_P_Lharvest" value={passFeatures.rival_P_Lharvest.toFixed(3)} kind="INFERRED" />
+                      <CalcRow label="trap_flag" value={passFeatures.trap_flag ? "YES" : "NO"} kind="INFERRED" />
+                      <CalcRow label="overtake_mode_active" value={passFeatures.overtake_mode_active ? "YES" : "NO"} kind="NOT_OBSERVED" />
+                      <CalcRow label="circuit_harvest_potential_mj" value={passFeatures.circuit_harvest_potential_mj.toFixed(2)} kind="INFERRED" />
+                      <CalcRow label="laps_remaining" value={String(passFeatures.laps_remaining)} kind="ACTUAL" />
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Pass-model features unavailable for this state.</p>
+                  )}
+                </div>
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Model status: {passFeatures?.model_status ?? "HEURISTIC"} - transparent heuristic, no trained ML weights.
+                </p>
+              </div>
+
+              {/* MODEL OUTPUT */}
+              <div className="lg:col-span-2">
+                <p className="text-[10px] font-bold tracking-widest text-muted-foreground">MODEL OUTPUT - OVERTAKE EV</p>
+                <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
+                  {evBreakdown ? (
+                    <>
+                      <CalcRow label="P(pass)" value={fmtPct(evBreakdown.p_pass)} kind="MODEL" />
+                      <CalcRow label="Points gain" value={evBreakdown.points_gain.toFixed(2)} kind="MODEL" />
+                      <CalcRow label="Repass risk" value={fmtPct(evBreakdown.repass_risk)} kind="MODEL" />
+                      <CalcRow label="Repass cost (pts)" value={evBreakdown.repass_cost_pts.toFixed(2)} kind="MODEL" />
+                      <CalcRow label="Repayment cost" value={`${evBreakdown.repayment_cost_s.toFixed(1)} s / ${evBreakdown.repayment_cost_pts.toFixed(2)} pts`} kind="MODEL" />
+                      <CalcRow label="Illegal penalty" value={evBreakdown.illegal_penalty.toFixed(2)} kind="MODEL" />
+                      <CalcRow label="Strategic EV" value={evBreakdown.strategic_ev.toFixed(2)} kind="MODEL" />
+                      <CalcRow label="Recommendation" value={evBreakdown.recommendation} kind="MODEL" />
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">EV breakdown unavailable for this state.</p>
+                  )}
+                </div>
+                {evBreakdown?.why && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">{evBreakdown.why}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

@@ -27,7 +27,7 @@ hard-coded numbers in the logic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -56,7 +56,9 @@ class MPCState:
     """Race context for one MPC re-plan (all estimates, not published values)."""
 
     gap_ahead_s: float = 1.0
-    gap_behind_s: float = 1.0
+    # ``None`` means no car behind exists (e.g. last-placed car): the behind
+    # dynamics are then skipped entirely, never fed a fabricated nominal gap.
+    gap_behind_s: Optional[float] = 1.0
     own_est_soc_mj: float = 2.0
     soc_window_mj: float = 4.0
     belief_ahead: Optional[Belief] = None
@@ -98,8 +100,13 @@ class Tier2MPC:
             return (1.0, 1.0)
         p_ld = float(belief.p_Lderate)
         p_lh = float(belief.p_Lharvest)
-        f = 1.0 + 0.03 * p_ld - 0.03 * p_lh
-        return (max(f, 0.9), max(f, 0.9))
+        # Rival pace modifier. Kept small (<=0.3% of a ~90 s lap = ~0.27 s/lap):
+        # a plausible slow/conserving rival is worth tenths per lap, not whole
+        # seconds. The old +-3% modifier produced +-2.7 s/lap, which is fine for
+        # relative posture scoring but made absolute gap projections drift by
+        # tens of seconds over the horizon - physically indefensible.
+        f = 1.0 + 0.003 * p_ld - 0.003 * p_lh
+        return (max(f, 0.99), max(f, 0.99))
 
     def _simulate(
         self, posture: str, state: MPCState, horizon: int
@@ -116,12 +123,20 @@ class Tier2MPC:
         min_soc = float("inf")  # floor reached *during* the horizon (not the start)
 
         f_ahead_a, f_ahead_b = self._rival_factors(state.belief_ahead)
-        f_behind_a, f_behind_b = self._rival_factors(state.belief_behind)
         rival_ahead_time = self.neutral_time * f_ahead_a
-        rival_behind_time = self.neutral_time * f_behind_b
+        # A rival behind exists only when an actual behind gap is supplied;
+        # belief_behind may still be unknown (treated as neutral pace).
+        has_rival_behind = state.gap_behind_s is not None
+        rival_behind_time = (
+            self.neutral_time * self._rival_factors(state.belief_behind)[1]
+            if has_rival_behind
+            else None
+        )
 
         gap_ahead = float(state.gap_ahead_s)
-        gap_behind = float(state.gap_behind_s)
+        gap_behind = (
+            float(state.gap_behind_s) if state.gap_behind_s is not None else None
+        )
         passes_ahead = 0
         repasses_behind = 0
         passed = False
@@ -151,16 +166,17 @@ class Tier2MPC:
             # A slower rival (larger lap time) lets us close the gap ahead; a
             # faster us (smaller lap time) grows the gap behind (we pull away).
             gap_ahead = gap_ahead - (rival_ahead_time - our_time)
-            gap_behind = gap_behind + (rival_behind_time - our_time)
             if not passed and gap_ahead <= 0.0:
                 passes_ahead += 1
                 passed = True
-            if not lost and gap_behind <= 0.0:
-                repasses_behind += 1
-                lost = True
-
             time_gain_ahead += max(0.0, rival_ahead_time - our_time)
-            time_lost_behind += max(0.0, our_time - rival_behind_time)
+
+            if rival_behind_time is not None and gap_behind is not None:
+                gap_behind = gap_behind + (rival_behind_time - our_time)
+                if not lost and gap_behind <= 0.0:
+                    repasses_behind += 1
+                    lost = True
+                time_lost_behind += max(0.0, our_time - rival_behind_time)
 
         trap_ahead = bool(state.belief_ahead.trap_flag) if state.belief_ahead else False
         # SoC is a *constraint*, not an objective: penalise only dipping below
@@ -188,7 +204,31 @@ class Tier2MPC:
             "trap_penalty": float(trap_penalty),
             "per_lap_net": per_lap_net,
             "per_lap_delta": per_lap_delta,
+            # End-of-horizon state for counterfactual What-If projections.
+            # final_gap_behind is None when no car behind exists.
+            "final_soc": float(soc),
+            "final_gap_ahead": float(gap_ahead),
+            "final_gap_behind": (
+                float(gap_behind) if gap_behind is not None else None
+            ),
         }
+
+    # ------------------------------------------------------------------
+    def simulate_posture(
+        self, posture: str, state: MPCState, horizon: int = 8
+    ) -> Dict[str, Any]:
+        """Public single-posture rollout (delegates to ``_simulate``).
+
+        Counterfactual What-If evaluation calls this instead of the private
+        ``_simulate``; the underlying rollout is one and the same.
+        """
+        if posture not in _POSTURE_PLANS:
+            raise ValueError(
+                f"unknown posture {posture!r}; expected one of "
+                f"{sorted(_POSTURE_PLANS)}"
+            )
+        horizon = max(1, int(horizon))
+        return self._simulate(posture, state, horizon)
 
     # ------------------------------------------------------------------
     def recommend(self, state: MPCState, horizon: int = 10) -> Posture:

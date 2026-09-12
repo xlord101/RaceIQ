@@ -54,7 +54,8 @@ interface FactualDriver {
   };
   recommendation?: {
     posture: Posture;
-    confidence: number;
+    /** Model emits no confidence value; null rather than a canned number. */
+    confidence: number | null;
     passProbability: number;
     overtakeEv: number;
     energyCost: number;
@@ -68,14 +69,19 @@ interface FactualDriver {
     whatIfBranches?: Record<
       string,
       {
-        projectedPosition: number;
-        projectedGap: number;
-        projectedSoc: number;
-        energyCost: number;
-        outcome: string;
-        risk: string;
-        confidence: number;
-        opponentResponse: string;
+        projectedPosition?: number;
+        projectedGap?: number;
+        projectedSoc?: number;
+        energySpendMj?: number;
+        minSocMj?: number;
+        passesAhead?: number;
+        repassesBehind?: number;
+        score?: number;
+        horizonLaps?: number;
+        inputsUnavailable?: string[];
+        inputApproximations?: Record<string, string>;
+        outcome?: string;
+        risk?: string;
       }
     >;
     hmm_belief?: HmmBeliefState;
@@ -446,11 +452,20 @@ function getWhatIf(
         projectedPosition: branchData.projectedPosition,
         projectedGap: branchData.projectedGap,
         projectedSoc: branchData.projectedSoc,
-        energyCost: branchData.energyCost,
+        energySpendMj: branchData.energySpendMj,
+        minSocMj: branchData.minSocMj,
+        passesAhead: branchData.passesAhead,
+        repassesBehind: branchData.repassesBehind,
+        score: branchData.score,
+        horizonLaps: branchData.horizonLaps,
+        inputsUnavailable: branchData.inputsUnavailable,
+        inputApproximations: branchData.inputApproximations,
         outcome: branchData.outcome,
-        risk: (branchData.risk as RiskLevel) ?? "MEDIUM",
-        confidence: branchData.confidence,
-        opponentResponse: branchData.opponentResponse,
+        // Model-generated branches carry no canned risk default: absent risk
+        // stays undefined rather than a fabricated MEDIUM.
+        risk: branchData.risk as RiskLevel | undefined,
+        // Model-generated branches carry neither confidence nor canned
+        // opponent narratives - those fields stay absent (UI shows a dash).
       };
     }
   }

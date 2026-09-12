@@ -41,6 +41,10 @@ interface RaceIQContextValue {
   /** Contract accessors — components never reach into a data producer. */
   driver: (code: string) => DriverIdentity;
   stateOf: (code: string) => RaceIQDriverState | undefined;
+  /** Immediate car ahead of `code` in the actual current race order, if any. */
+  aheadOf: (code: string) => RaceIQDriverState | undefined;
+  /** Immediate car behind `code` in the actual current race order, if any. */
+  behindOf: (code: string) => RaceIQDriverState | undefined;
   recommendationFor: (code: string) => RaceIQRecommendation | undefined;
   whatIf: (code: string, action: Posture) => RaceIQWhatIfBranch | undefined;
   analysisSnapshot?: RaceIQAnalysisSnapshot | undefined;
@@ -103,6 +107,22 @@ export function RaceIQProvider({
     [adapter, circuit.id, time],
   );
 
+  // Cars in the actual current race order. `aheadOf` / `behindOf` derive the
+  // immediate neighbours of the selected Haas driver from this order — the
+  // primary workflow never asks the user to pick opponents manually.
+  const orderedDrivers = useMemo(
+    () => [...snapshot.drivers].sort((a, b) => a.position - b.position),
+    [snapshot],
+  );
+  const aheadOf = (code: string): RaceIQDriverState | undefined => {
+    const i = orderedDrivers.findIndex((d) => d.code === code);
+    return i > 0 ? orderedDrivers[i - 1] : undefined;
+  };
+  const behindOf = (code: string): RaceIQDriverState | undefined => {
+    const i = orderedDrivers.findIndex((d) => d.code === code);
+    return i >= 0 && i < orderedDrivers.length - 1 ? orderedDrivers[i + 1] : undefined;
+  };
+
   const value: RaceIQContextValue = {
     adapter,
     circuits: adapter.circuits,
@@ -119,6 +139,11 @@ export function RaceIQProvider({
     selected,
     setSelected: (code) => {
       setSelected((prev) => {
+        // Primary selection is Haas-only: the decision workflow always
+        // represents the tracked team (OCO / BEA). Clicks on other cars must
+        // not become the primary selection — the timing grid routes them to
+        // the secondary comparison via setRival instead.
+        if (!adapter.driver(code)?.tracked) return prev;
         if (code === prev) return prev;
         setRival((r) => (r === code ? prev : r));
         return code;
@@ -128,6 +153,8 @@ export function RaceIQProvider({
     setRival,
     driver: (code) => adapter.driver(code) ?? { code },
     stateOf: (code) => snapshot.byCode[code],
+    aheadOf,
+    behindOf,
     recommendationFor: (code) => adapter.recommend?.(snapshot, code),
     whatIf: (code, action) => adapter.whatIf?.(snapshot, code, action),
     analysisSnapshot: adapter.analysisSnapshotAt?.(circuit.id, time, selected),

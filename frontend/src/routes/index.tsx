@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DriverContext } from "@/components/raceiq/DriverContext";
 import { HaasPanel } from "@/components/raceiq/HaasPanel";
 import { MatchupCard } from "@/components/raceiq/MatchupCard";
-import { ProvenanceLegend, ProvenanceTag } from "@/components/raceiq/ProvenanceTag";
+import { ProvenanceTag } from "@/components/raceiq/ProvenanceTag";
 import { ReplayBar } from "@/components/raceiq/ReplayBar";
 import { TimingGrid } from "@/components/raceiq/TimingGrid";
 import { TrackMap } from "@/components/raceiq/TrackMap";
@@ -115,14 +115,12 @@ function SelectedDriver() {
 }
 
 function LiveRace() {
-  const { snapshot } = useRaceIQ();
-
   return (
     <main className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6">
       <h1 className="sr-only">RaceIQ live race replay</h1>
       <ReplayBar />
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
         <TrackMap />
         <div className="space-y-4">
           <HaasPanel />
@@ -130,27 +128,11 @@ function LiveRace() {
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] items-start">
         <TimingGrid />
         <div className="space-y-4">
-          <section className="panel p-4">
-            <p className="eyebrow">Arbitrary comparison — secondary</p>
-            <MatchupCard />
-            <SelectedDriver />
-          </section>
-          <div className="panel p-4">
-            <p className="eyebrow">Where the numbers come from</p>
-            <div className="mt-2">
-              <ProvenanceLegend
-                kinds={[snapshot.positionsProvenance, snapshot.energyProvenance, "PROJECTED"]}
-              />
-            </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Lap {snapshot.lap} of {snapshot.totalLaps}. Positions and gaps come from the replay
-              source; battery, energy mode and every recommendation are RaceIQ estimates, not
-              measurements.
-            </p>
-          </div>
+          <MatchupCard />
+          <SelectedDriver />
         </div>
       </div>
     </main>

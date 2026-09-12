@@ -139,6 +139,11 @@ export function RaceIQProvider({
     selected,
     setSelected: (code) => {
       setSelected((prev) => {
+        // Primary selection is Haas-only: the decision workflow always
+        // represents the tracked team (OCO / BEA). Clicks on other cars must
+        // not become the primary selection — the timing grid routes them to
+        // the secondary comparison via setRival instead.
+        if (!adapter.driver(code)?.tracked) return prev;
         if (code === prev) return prev;
         setRival((r) => (r === code ? prev : r));
         return code;

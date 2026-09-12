@@ -290,7 +290,7 @@ export interface RaceIQRecommendation {
   headline?: string | undefined;
   reason?: string | undefined;
   /** 0..1 */
-  confidence?: number | undefined;
+  confidence?: number | null | undefined;
   /** 0..1 */
   passProbability?: number | undefined;
   /** Seconds of net race time. */
@@ -316,11 +316,30 @@ export interface RaceIQWhatIfBranch {
   projectedPosition?: number | undefined;
   projectedGap?: number | undefined;
   projectedSoc?: number | undefined;
-  energyCost?: number | undefined;
+  /** Net energy spend over the horizon [MJ]; negative = net recovery. */
+  energySpendMj?: number | undefined;
+  /** Deprecated legacy demo-adapter field; factual data uses energySpendMj. */
+  energyCost?: number | null | undefined;
+  /** Lowest estimated SoC reached within the horizon [MJ]. */
+  minSocMj?: number | undefined;
+  /** Model-derived passes on the car ahead within the horizon. */
+  passesAhead?: number | undefined;
+  /** Model-derived re-passes by the car behind within the horizon. */
+  repassesBehind?: number | undefined;
+  /** Tier-2 strategic score for this posture (NOT a probability). */
+  score?: number | undefined;
+  /** Laps the rollout actually covered. */
+  horizonLaps?: number | undefined;
+  /** Inputs the model did not have for this state - never fabricated. */
+  inputsUnavailable?: string[] | undefined;
+  /** Documented analytical approximations feeding the model. */
+  inputApproximations?: Record<string, string> | undefined;
   outcome?: string | undefined;
   risk?: RiskLevel | undefined;
-  confidence?: number | undefined;
-  opponentResponse?: string | undefined;
+  /** Deprecated canned value - model emits none; UI shows dash when absent. */
+  confidence?: number | null | undefined;
+  /** Deprecated canned narrative - model emits none. */
+  opponentResponse?: string | null | undefined;
 }
 
 /** Track geometry and presentation metadata for one supported circuit. */

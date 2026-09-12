@@ -138,7 +138,8 @@ def test_hmm_and_pass_probabilities(factual_data):
                 p_pass = rec.get("passProbability")
                 assert 0.0 <= p_pass <= 1.0, f"P(pass) {p_pass} outside [0, 1]"
                 conf = rec.get("confidence")
-                assert 0.0 <= conf <= 1.0, f"Confidence {conf} outside [0, 1]"
+                if conf is not None:
+                    assert 0.0 <= conf <= 1.0, f"Confidence {conf} outside [0, 1]"
                 
                 # Check HMM factor percentages if present
                 for factor in rec.get("factors", []):
@@ -162,4 +163,7 @@ def test_what_if_immutability_and_projected(factual_data):
                     assert 0.0 <= branch["projectedSoc"] <= 1.0
                     assert branch["projectedPosition"] >= 1
                     assert branch["risk"] in {"LOW", "MEDIUM", "HIGH"}
-                    assert 0.0 <= branch["confidence"] <= 1.0
+                    # Score is exposed as strategic model score, not fake confidence
+                    assert "score" in branch
+                    if "confidence" in branch and branch["confidence"] is not None:
+                        assert 0.0 <= branch["confidence"] <= 1.0

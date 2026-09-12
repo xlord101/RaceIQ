@@ -132,3 +132,37 @@ def test_horizon_scoring_changes_with_laps():
 def test_needs_nonempty_frontier():
     with pytest.raises(ValueError):
         Tier2MPC(ParetoFrontier(np.zeros(0), np.zeros(0)))
+
+
+# --------------------------------------------------------------------------
+# Public rollout API + counterfactual projection outputs (What-If support)
+# --------------------------------------------------------------------------
+def test_simulate_posture_exposes_final_state():
+    mpc = Tier2MPC(_frontier())
+    res = mpc.simulate_posture("NEUTRAL", _state(gap_behind_s=None), horizon=8)
+    for key in ("final_soc", "final_gap_ahead", "final_gap_behind"):
+        assert key in res
+    assert res["final_gap_behind"] is None
+
+
+def test_no_rival_behind_skips_behind_dynamics():
+    mpc = Tier2MPC(_frontier())
+    res = mpc.simulate_posture("ATTACK", _state(gap_behind_s=None), horizon=8)
+    assert res["repasses_behind"] == 0
+    assert res["time_lost_behind"] == 0.0
+    assert res["final_gap_behind"] is None
+
+
+def test_final_state_moves_with_posture():
+    mpc = Tier2MPC(_frontier())
+    st = _state(gap_ahead_s=0.6, own_est_soc_mj=4.0, circuit_harvest_potential_mj=7.0)
+    atk = mpc.simulate_posture("ATTACK", st, horizon=10)
+    hrv = mpc.simulate_posture("HARVEST", st, horizon=10)
+    assert atk["final_gap_ahead"] < hrv["final_gap_ahead"]
+    assert atk["final_soc"] < hrv["final_soc"]
+
+
+def test_simulate_posture_rejects_unknown_posture():
+    mpc = Tier2MPC(_frontier())
+    with pytest.raises(ValueError):
+        mpc.simulate_posture("HOLD", _state())

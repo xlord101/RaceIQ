@@ -17,23 +17,21 @@ function formatTyre(tyre?: { compound: string | null; ageLaps: number | null } |
   };
   const letter = shortMap[c] ?? c.charAt(0);
   const age = typeof tyre.ageLaps === "number" ? `${Math.round(tyre.ageLaps)}L` : "";
-  const label = age ? `${letter} ${age}` : letter;
-  const fullName = c.charAt(0) + c.slice(1).toLowerCase();
-  const title = age ? `${fullName} · ${Math.round(tyre.ageLaps!)} laps` : fullName;
-  return { label, title };
+  return { label: age ? `${letter} ${age}` : letter, title: tyre.compound };
 }
 
 function Row({ d }: { d: RaceIQDriverState }) {
-  const { selected, rival, setSelected, driver: driverOf } = useRaceIQ();
+  const { selected, rival, setSelected, setRival, driver: driverOf } = useRaceIQ();
   const driver = driverOf(d.code);
   const isSelected = d.code === selected;
   const isRival = d.code === rival;
+  const isTracked = driver.tracked === true;
   const tyreInfo = formatTyre(d.tyre);
 
   return (
     <button
       type="button"
-      onClick={() => setSelected(d.code)}
+      onClick={() => (isTracked ? setSelected(d.code) : setRival(d.code))}
       className={`grid w-full grid-cols-[1.5rem_3px_minmax(0,1fr)_3rem_2.8rem_2.2rem] items-center gap-2 rounded border px-2 py-1 text-left transition-colors ${
         isSelected
           ? "border-primary/60 bg-primary/10"
@@ -74,8 +72,9 @@ function Row({ d }: { d: RaceIQDriverState }) {
 
 export function TimingGrid() {
   const { snapshot } = useRaceIQ();
-  const half = Math.ceil(snapshot.drivers.length / 2);
-  const columns = [snapshot.drivers.slice(0, half), snapshot.drivers.slice(half)];
+  const ordered = [...snapshot.drivers].sort((a, b) => a.position - b.position);
+  const half = Math.ceil(ordered.length / 2);
+  const columns = [ordered.slice(0, half), ordered.slice(half)];
 
   return (
     <div className="panel p-4">

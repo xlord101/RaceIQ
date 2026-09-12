@@ -13,7 +13,7 @@ Strict requirements enforced:
 - PassModel: 12-feature calibrated logistic model evaluated via heuristic_p_pass.
 - OvertakeEV: Evaluated legal-bet EV engine outputs.
 - FIA Rule Compliance: ComplianceLedger checks.
-- Counterfactual What-If: Pre-evaluated branches for ATTACK, HOLD, DEFEND, HARVEST.
+- Counterfactual What-If: model-generated branches (Tier-2 rollout) for ATTACK, HOLD, DEFEND, HARVEST.
 """
 
 from __future__ import annotations
@@ -35,8 +35,10 @@ from raceiq.config import load_rules
 from raceiq.decision import OvertakeContext, OvertakeEV, PassModel
 from raceiq.inference.opponent_belief import OpponentBelief, compute_emissions
 from raceiq.pipeline import build_replay
+from raceiq.optimize.tier2_mpc import MPCState, Tier2MPC
 from raceiq.rules.ledger import ComplianceLedger
 from raceiq.track.segmentation import longest_straight
+from raceiq.ui.whatif import build_whatif_branches
 from raceiq.types import DeploymentPlan, PlanSegment
 from raceiq.validation.metrics import physics_frontier
 
@@ -59,6 +61,7 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
     frontier = physics_frontier(harvest_potential)
     pass_model = PassModel()
     ev_engine = OvertakeEV(config=rules, pass_model=pass_model, event=None)
+    mpc = Tier2MPC(frontier, config=rules)
     ledger = ComplianceLedger(rules=rules)
     
     # Track opponent HMM filters per driver pair
@@ -165,6 +168,16 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     gapAhead = 1.0  # nominal gap if timing packet missing
             else:
                 gapAhead = 0.0
+
+            # ACTUAL gap to the car behind (timing delta to the next classified
+            # car). ``None`` means no classified car behind - never a nominal value.
+            gap_behind_s: Optional[float] = None
+            if rank + 1 < len(valid_pos):
+                next_row = valid_pos.iloc[rank + 1]
+                if pd.notna(row["Time"]) and pd.notna(next_row["Time"]):
+                    gap_behind_s = max(
+                        0.0, float((next_row["Time"] - row["Time"]).total_seconds())
+                    )
                 
             # Estimated SoC from SocObserver
             est_soc_mj = replay.soc_at_lap(code, lap)
@@ -334,6 +347,40 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                 )
                 belief = hmm.update(emissions)
 
+                # Belief about the CAR BEHIND from its own speed trace, using the
+                # identical 8-state machinery. Absent when no classified car
+                # behind - reported, never fabricated.
+                belief_behind = None
+                if gap_behind_s is not None and rank + 1 < len(valid_pos):
+                    behind_row = valid_pos.iloc[rank + 1]
+                    behind_code = str(behind_row["Driver"])
+                    behind_trace = replay.speed_trace(behind_code, lap)
+                    behind_base = ref_baselines.get(behind_code, {})
+                    b_brk_dist = None
+                    if (
+                        not behind_trace.empty
+                        and straight_window is not None
+                        and "Brake" in behind_trace.columns
+                    ):
+                        b_mask = (
+                            (behind_trace["Distance"] >= straight_window[1] - 50.0)
+                            & (behind_trace["Brake"] > 0.1)
+                        )
+                        if b_mask.sum() > 0:
+                            b_brk_dist = float(behind_trace.loc[b_mask, "Distance"].iloc[0])
+                    behind_emissions = compute_emissions(
+                        speed_trace=behind_trace,
+                        baseline_speed_kph=behind_base.get("vmax", field_median_vmax),
+                        brake_distance_m=b_brk_dist,
+                        baseline_brake_m=behind_base.get("brake_dist"),
+                        in_aero_zone=bool(gap_behind_s < 1.0),
+                        straight_window=straight_window,
+                    )
+                    pair_key_b = f"{code}_BEHIND_{behind_code}"
+                    if pair_key_b not in hmm_filters:
+                        hmm_filters[pair_key_b] = OpponentBelief(n_states=8)
+                    belief_behind = hmm_filters[pair_key_b].update(behind_emissions)
+
                 speed = 285.0
                 if not rival_speed_trace.empty:
                     speed = float(rival_speed_trace["Speed"].max())
@@ -380,50 +427,31 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     {"label": "Recharge time cost", "value": f"{dec.repayment_cost_s:.1f}s", "provenance": "INFERRED"},
                 ]
                 
-                # Pre-evaluated counterfactual branches
-                what_if_branches = {
-                    "ATTACK": {
-                        "projectedPosition": max(1, pos - 1) if pos > 1 else 1,
-                        "projectedGap": 0.75,
-                        "projectedSoc": round(max(0.05, soc_norm - 0.12), 4),
-                        "energyCost": 0.45,
-                        "outcome": "Overtake completed at Turn 1 apex" if pos > 1 else "Lead extended",
-                        "risk": "HIGH",
-                        "confidence": round(float(dec.p_pass), 3),
-                        "opponentResponse": "Attempted defensive squeeze but conceded corner",
-                    },
-                    "HOLD": {
-                        "projectedPosition": pos,
-                        "projectedGap": round(gapAhead, 3),
-                        "projectedSoc": round(soc_norm, 4),
-                        "energyCost": 0.05,
-                        "outcome": "Pace matched; battery charge preserved for next straight",
-                        "risk": "LOW",
-                        "confidence": 0.94,
-                        "opponentResponse": "Maintained defensive positioning",
-                    },
-                    "DEFEND": {
-                        "projectedPosition": pos,
-                        "projectedGap": round(gapAhead + 0.35, 3),
-                        "projectedSoc": round(max(0.05, soc_norm - 0.06), 4),
-                        "energyCost": 0.22,
-                        "outcome": "Track position secured against undercut attempt",
-                        "risk": "MEDIUM",
-                        "confidence": 0.86,
-                        "opponentResponse": "Attempted outside switchback; repelled",
-                    },
-                    "HARVEST": {
-                        "projectedPosition": pos,
-                        "projectedGap": round(gapAhead + 0.65, 3),
-                        "projectedSoc": round(min(0.98, soc_norm + 0.10), 4),
-                        "energyCost": -0.38,
-                        "outcome": f"Recharged +10 pt SoC; ceded 0.65s in dirty air",
-                        "risk": "LOW",
-                        "confidence": 0.92,
-                        "opponentResponse": "Pulled 0.65s margin down the straight",
-                    },
-                }
-                
+                # Model-generated counterfactual branches: the frozen replay
+                # state is rolled forward through the existing Tier-2
+                # scenario-tree optimiser (HOLD = the NEUTRAL baseline plan).
+                # No branch value below is a canned constant; inputs the model
+                # does not have are reported in ``inputsUnavailable``.
+                mpc_state = MPCState(
+                    gap_ahead_s=float(gapAhead),
+                    # None when no classified car behind - never a nominal gap.
+                    gap_behind_s=gap_behind_s,
+                    own_est_soc_mj=float(est_soc_mj),
+                    soc_window_mj=float(rules.soc_window_mj),
+                    belief_ahead=belief,
+                    belief_behind=belief_behind,
+                    laps_remaining=max(total_laps - lap, 1),
+                    tyre_age_laps=float(tyre_age) if tyre_age is not None else None,
+                    rival_tyre_age_laps=(
+                        float(rival_tyre_age) if rival_tyre_age is not None else None
+                    ),
+                    circuit_harvest_potential_mj=harvest_potential,
+                    position=pos,
+                )
+                what_if_branches = build_whatif_branches(
+                    mpc, mpc_state, position=pos, horizon=8
+                )
+
                 # 8-state HMM posterior
                 state_names = [
                     "H|OT_avail",
@@ -485,7 +513,9 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
 
                 drv_state["recommendation"] = {
                     "posture": dec.recommendation.upper(),
-                    "confidence": 0.88,
+                    # No principled confidence output exists in the model; the
+                    # field stays null rather than a canned number.
+                    "confidence": None,
                     "passProbability": round(float(dec.p_pass), 3),
                     "overtakeEv": round(float(dec.ev), 2),
                     "energyCost": round(float(dec.repayment_cost_s * 0.05), 3),
