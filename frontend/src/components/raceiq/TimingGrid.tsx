@@ -3,16 +3,38 @@ import { fmtPct, pctWidth } from "@/lib/raceiq/format";
 import { useRaceIQ } from "@/lib/raceiq/store";
 import { ProvenanceTag } from "./ProvenanceTag";
 
+function formatTyre(tyre?: { compound: string | null; ageLaps: number | null } | null) {
+  if (!tyre || !tyre.compound) {
+    return { label: "—", title: "Tyre data unavailable" };
+  }
+  const c = tyre.compound.toUpperCase();
+  const shortMap: Record<string, string> = {
+    SOFT: "S",
+    MEDIUM: "M",
+    HARD: "H",
+    INTERMEDIATE: "I",
+    WET: "W",
+  };
+  const letter = shortMap[c] ?? c.charAt(0);
+  const age = typeof tyre.ageLaps === "number" ? `${Math.round(tyre.ageLaps)}L` : "";
+  const label = age ? `${letter} ${age}` : letter;
+  const fullName = c.charAt(0) + c.slice(1).toLowerCase();
+  const title = age ? `${fullName} · ${Math.round(tyre.ageLaps!)} laps` : fullName;
+  return { label, title };
+}
+
 function Row({ d }: { d: RaceIQDriverState }) {
   const { selected, rival, setSelected, driver: driverOf } = useRaceIQ();
   const driver = driverOf(d.code);
   const isSelected = d.code === selected;
   const isRival = d.code === rival;
+  const tyreInfo = formatTyre(d.tyre);
+
   return (
     <button
       type="button"
       onClick={() => setSelected(d.code)}
-      className={`grid w-full grid-cols-[1.6rem_0.15rem_5.5rem_minmax(0,1fr)_3rem_2.4rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-left transition-colors sm:gap-2 ${
+      className={`grid w-full grid-cols-[1.5rem_3px_minmax(0,1fr)_3rem_2.8rem_2.2rem] items-center gap-2 rounded border px-2 py-1 text-left transition-colors ${
         isSelected
           ? "border-primary/60 bg-primary/10"
           : isRival
@@ -21,9 +43,15 @@ function Row({ d }: { d: RaceIQDriverState }) {
       }`}
     >
       <span className="data text-right text-[11px] text-muted-foreground">{d.position}</span>
-      <span className="h-4 w-[3px] rounded-full" style={{ backgroundColor: driver.color }} />
+      <span className="h-4 w-[3px] rounded-sm" style={{ backgroundColor: driver.color }} />
       <span className="data flex min-w-0 items-center gap-1.5 text-[12px] font-medium">
         <span className="truncate">{d.code}</span>
+        <span
+          className="data text-[10px] text-muted-foreground"
+          title={tyreInfo.title}
+        >
+          {tyreInfo.label}
+        </span>
         {driver.tracked && (
           <span className="data rounded bg-primary/20 px-1 text-[8px] tracking-widest text-primary">
             {(driver.team ?? "TRACKED").toUpperCase()}
@@ -59,7 +87,7 @@ export function TimingGrid() {
         </div>
       </div>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Tap a driver to compare. Gap is replay data, battery % is a RaceIQ estimate.
+        Tap a driver to compare. Gap and tyre state are actual race data; battery % is a RaceIQ estimate.
       </p>
       <div className="mt-3 grid gap-x-4 gap-y-0.5 lg:grid-cols-2">
         {columns.map((col, i) => (

@@ -196,3 +196,101 @@ def test_provenance_correctness(circuit_dataset):
             if rec:
                 for factor in rec.get("factors", []):
                     assert factor["provenance"] in {"ACTUAL", "INFERRED", "PROJECTED", "SAMPLE"}
+
+
+def test_tyre_data_presence_and_validity(circuit_dataset):
+    """Verify tyre compound and age are present and valid for drivers."""
+    circuit, expected, data = circuit_dataset
+    valid_compounds = {"SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", None}
+    for lap in data["laps"][:15]:
+        for drv in lap["drivers"]:
+            tyre = drv.get("tyre")
+            assert tyre is not None, f"Missing tyre object for {drv['code']} in lap {lap['lap']}"
+            assert tyre["compound"] in valid_compounds, f"Invalid compound {tyre['compound']} for {drv['code']}"
+            if tyre["ageLaps"] is not None:
+                assert tyre["ageLaps"] >= 0, f"Negative tyre age for {drv['code']}"
+
+
+def test_lap_timing_data_validity(circuit_dataset):
+    """Verify lap timing source fields (lapStartTime, lapEndTime, lapTime) are valid."""
+    circuit, expected, data = circuit_dataset
+    for lap in data["laps"][:15]:
+        for drv in lap["drivers"]:
+            timing = drv.get("lapTiming")
+            assert timing is not None, f"Missing lapTiming for {drv['code']} in lap {lap['lap']}"
+            if timing.get("lapTime") is not None:
+                assert timing["lapTime"] > 0, f"Non-positive lapTime for {drv['code']}"
+            if timing.get("lapStartTime") is not None and timing.get("lapEndTime") is not None:
+                assert timing["lapEndTime"] >= timing["lapStartTime"], f"lapEndTime before lapStartTime for {drv['code']}"
+
+
+def test_driver_grid_and_positions(circuit_dataset):
+    """Verify driver grid contains valid 2026 participants with sequential positions."""
+    circuit, expected, data = circuit_dataset
+    all_codes = set()
+    for idx, lap in enumerate(data["laps"]):
+        drivers = lap["drivers"]
+        min_expected = 18 if idx == 0 else 5
+        assert len(drivers) >= min_expected, f"Expected at least {min_expected} drivers in lap {lap['lap']}, got {len(drivers)}"
+        positions = [d["position"] for d in drivers]
+        assert positions[0] == 1, "P1 must be first"
+        for i, pos in enumerate(positions):
+            assert pos == i + 1, f"Positions must be sequential: {positions}"
+        for d in drivers:
+            all_codes.add(d["code"])
+    # 2026 FIA field has up to 22 entries (18-22 depending on retirements/DNS)
+    assert 18 <= len(all_codes) <= 22, f"Unexpected field size: {len(all_codes)}"
+
+
+def test_driver_lap_fraction_validity(circuit_dataset):
+    """Verify driver lap timing and distance map to valid normalized progress in [0, 1]."""
+    circuit, expected, data = circuit_dataset
+    for lap in data["laps"][:15]:
+        base_lap_time = data.get("baseLapTime", 90.0)
+        leader = next((d for d in lap["drivers"] if d["position"] == 1), lap["drivers"][0])
+        leader_start = leader.get("lapTiming", {}).get("lapStartTime")
+        leader_dur = leader.get("lapTiming", {}).get("lapTime") or base_lap_time
+
+        for drv in lap["drivers"]:
+            timing = drv.get("lapTiming") or {}
+            # Verify driver's local time progress
+            if drv["position"] == 1:
+                norm_time_frac = 0.5  # test mid-lap
+            elif timing.get("lapStartTime") is not None and leader_start is not None and timing.get("lapTime"):
+                t_current = leader_start + 0.5 * leader_dur
+                t_driver = t_current - timing["lapStartTime"]
+                norm_time_frac = ((t_driver / timing["lapTime"]) % 1.0 + 1.0) % 1.0
+            else:
+                gap = drv.get("gapToLeader") or 0.0
+                norm_time_frac = (((0.5 * base_lap_time - gap) / base_lap_time) % 1.0 + 1.0) % 1.0
+
+            assert 0.0 <= norm_time_frac < 1.0, f"Normalized time fraction out of bounds: {norm_time_frac}"
+
+            # Verify distance mapping if subLap distance exists
+            sub = drv.get("subLap")
+            if sub and sub.get("distance"):
+                dist = sub["distance"]
+                max_d = dist[-1]
+                assert max_d > 0
+                u = norm_time_frac * (len(dist) - 1)
+                idx = int(u)
+                r = u - idx
+                d_interp = dist[idx] + r * (dist[min(idx + 1, len(dist) - 1)] - dist[idx])
+                dist_frac = d_interp / max_d
+                assert 0.0 <= dist_frac <= 1.0, f"Distance progress out of bounds: {dist_frac}"
+
+
+def test_telemetry_distance_monotonicity(circuit_dataset):
+    """Verify subLap.distance has 16 monotonically increasing samples."""
+    circuit, expected, data = circuit_dataset
+    for lap in data["laps"][:10]:
+        for drv in lap["drivers"]:
+            sub = drv.get("subLap")
+            if sub and "distance" in sub and sub["distance"]:
+                dist = sub["distance"]
+                assert len(dist) == 16, f"Distance array length {len(dist)} != 16 for {drv['code']}"
+                assert dist[0] >= 0, f"Initial distance negative for {drv['code']}"
+                assert dist[-1] > dist[0], f"Lap distance not advancing for {drv['code']}"
+                for i in range(1, len(dist)):
+                    assert dist[i] >= dist[i - 1], f"Distance not non-decreasing at index {i} for {drv['code']}"
+

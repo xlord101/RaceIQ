@@ -47,27 +47,50 @@ function SelectedDriver() {
           <p className="truncate text-xs text-muted-foreground">{driver.team}</p>
         </div>
         <span
-          className="data shrink-0 rounded-lg border border-border px-2.5 py-1 text-sm"
+          className="data shrink-0 rounded border border-border px-2.5 py-1 text-sm font-semibold"
           style={{ color: driver.color }}
         >
           {state ? `P${state.position}` : EMPTY}
         </span>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          {
-            k: "Gap to leader",
-            v: state?.position === 1 ? "leader" : fmtGap(state?.gapToLeader),
-          },
-          { k: "Gap ahead", v: state?.position === 1 ? EMPTY : fmtGap(state?.gapAhead) },
-          { k: "Battery (est.)", v: fmtPct(state?.soc) },
-          { k: "Energy state", v: state?.ersMode ?? EMPTY },
-        ].map((item) => (
-          <div key={item.k}>
-            <dt className="text-[11px] text-muted-foreground">{item.k}</dt>
-            <dd className="data text-sm">{item.v}</dd>
-          </div>
-        ))}
+      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div>
+          <dt className="text-[11px] text-muted-foreground">Gap to leader</dt>
+          <dd className="data text-sm font-medium">
+            {state?.position === 1 ? "leader" : fmtGap(state?.gapToLeader)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-muted-foreground">Gap ahead</dt>
+          <dd className="data text-sm font-medium">
+            {state?.position === 1 ? EMPTY : fmtGap(state?.gapAhead)}
+          </dd>
+        </div>
+        <div>
+          <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span>Tyre</span>
+            <span className="text-[9px] text-actual font-mono font-medium">(ACTUAL)</span>
+          </dt>
+          <dd className="data text-sm font-semibold">
+            {state?.tyre?.compound
+              ? `${state.tyre.compound}${typeof state.tyre.ageLaps === "number" ? ` · ${Math.round(state.tyre.ageLaps)} LAPS` : ""}`
+              : EMPTY}
+          </dd>
+        </div>
+        <div>
+          <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span>Battery (est.)</span>
+            <span className="text-[9px] text-inferred font-mono font-medium">(INFERRED)</span>
+          </dt>
+          <dd className="data text-sm font-medium">{fmtPct(state?.soc)}</dd>
+        </div>
+        <div>
+          <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span>Energy state</span>
+            <span className="text-[9px] text-inferred font-mono font-medium">(INFERRED)</span>
+          </dt>
+          <dd className="data text-sm font-medium">{state?.ersMode ?? EMPTY}</dd>
+        </div>
       </dl>
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
         <span className="text-[11px] text-muted-foreground">Compare against</span>
@@ -75,7 +98,7 @@ function SelectedDriver() {
           value={rival}
           onChange={(e) => setRival(e.target.value)}
           aria-label="Comparison driver"
-          className="data rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px]"
+          className="data rounded border border-border bg-surface-raised px-2 py-1 text-[11px]"
         >
           {snapshot.drivers
             .filter((d) => d.code !== selected)

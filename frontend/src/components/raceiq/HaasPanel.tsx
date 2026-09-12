@@ -28,7 +28,7 @@ export function HaasPanel() {
               key={code}
               type="button"
               onClick={() => setSelected(code)}
-              className={`group relative min-h-44 overflow-hidden rounded-lg border p-3 text-left transition-colors ${
+              className={`group relative min-h-44 overflow-hidden rounded border p-3 text-left transition-colors ${
                 active ? "border-primary/60 bg-primary/10" : "border-border bg-surface-raised hover:bg-accent/50"
               }`}
             >

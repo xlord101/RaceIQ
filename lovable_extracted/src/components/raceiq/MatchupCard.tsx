@@ -89,26 +89,26 @@ export function MatchupCard() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         {rec ? (
           <span
-            className={`data inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs tracking-[0.12em] ${POSTURE_STYLE[rec.posture]}`}
+            className={`data inline-flex items-center gap-2 rounded border px-2.5 py-1 text-xs tracking-[0.12em] ${POSTURE_STYLE[rec.posture]}`}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
             {rec.posture}
           </span>
         ) : (
-          <span className="data inline-flex items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs tracking-[0.12em] text-muted-foreground">
+          <span className="data inline-flex items-center gap-2 rounded border border-border px-2.5 py-1 text-xs tracking-[0.12em] text-muted-foreground">
             NO CALL
           </span>
         )}
         <div className="flex gap-2">
           <Link
             to="/why"
-            className="data rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
+            className="data rounded border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
           >
             WHY?
           </Link>
           <Link
             to="/what-if"
-            className="data rounded-lg border border-primary/50 bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
+            className="data rounded border border-primary/50 bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
           >
             WHAT IF?
           </Link>

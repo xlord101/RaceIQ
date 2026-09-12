@@ -34,6 +34,30 @@ export interface DriverIdentity {
   image?: string | undefined;
 }
 
+export type TyreCompound = "SOFT" | "MEDIUM" | "HARD" | "INTERMEDIATE" | "WET" | null;
+
+export interface DriverTyreState {
+  compound: TyreCompound;
+  ageLaps: number | null;
+}
+
+export interface DriverLapTiming {
+  lapStartTime: number | null;
+  lapEndTime: number | null;
+  lapTime: number | null;
+}
+
+export interface DriverSubLapState {
+  distance?: number[] | null | undefined;
+  speed?: number[] | null | undefined;
+  throttle?: number[] | null | undefined;
+  brake?: number[] | null | undefined;
+  soc?: number[] | null | undefined;
+  modes?: string[] | null | undefined;
+  kinds?: string[] | null | undefined;
+  clips?: boolean[] | null | undefined;
+}
+
 /** One car at one instant of a session. Only code + position are guaranteed. */
 export interface RaceIQDriverState {
   code: string;
@@ -51,6 +75,9 @@ export interface RaceIQDriverState {
   ersMode?: ErsMode | undefined;
   aeroMode?: AeroMode | undefined;
   inDetectionWindow?: boolean | undefined;
+  tyre?: DriverTyreState | null | undefined;
+  lapTiming?: DriverLapTiming | null | undefined;
+  subLap?: DriverSubLapState | null | undefined;
 }
 
 /** Immutable identifiers of the source state. What-If branches are seeded from this. */

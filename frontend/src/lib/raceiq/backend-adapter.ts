@@ -33,7 +33,20 @@ interface FactualDriver {
   nextSoc: number | null;
   socTrend: number | null;
   ersMode: string | null;
+  tyre?: {
+    compound: "SOFT" | "MEDIUM" | "HARD" | "INTERMEDIATE" | "WET" | null;
+    ageLaps: number | null;
+  } | null;
+  lapTiming?: {
+    lapStartTime: number | null;
+    lapEndTime: number | null;
+    lapTime: number | null;
+  } | null;
   subLap?: {
+    distance?: number[];
+    speed?: number[];
+    throttle?: number[];
+    brake?: number[];
     soc: number[];
     modes: string[];
     kinds: string[];
@@ -183,6 +196,13 @@ function getSnapshotAt(circuitId: string, time: number): RaceIQSnapshot {
   const detect = circuit.detectionLine ?? 0.52;
   const activate = circuit.activationLine ?? 0.63;
 
+  // Find P1 (race leader on this lap) for authoritative reference timing
+  const leader = lapData.drivers.find((drv) => drv.position === 1) ?? lapData.drivers[0];
+  const leaderLapTime = leader?.lapTiming?.lapTime && leader.lapTiming.lapTime > 0
+    ? leader.lapTiming.lapTime
+    : baseLapTime;
+  const leaderStartTime = leader?.lapTiming?.lapStartTime;
+
   const drivers: RaceIQDriverState[] = lapData.drivers.map((d) => {
     // Physical cumulative race gap to P1 from FastF1
     const gapToLeader =
@@ -190,10 +210,49 @@ function getSnapshotAt(circuitId: string, time: number): RaceIQSnapshot {
     const gapAhead =
       typeof d.gapAhead === "number" ? d.gapAhead : d.position === 1 ? 0 : undefined;
 
-    // Track map placement relative to leader
-    const gapDelta = (gapToLeader ?? 0) / baseLapTime;
-    let lapFraction = (baseLapFraction - gapDelta) % 1.0;
-    if (lapFraction < 0) lapFraction += 1.0;
+    // Factual lap progress calculation:
+    // 1. Derive driver's local time progress in their current lap
+    let normTimeFrac: number;
+    if (d.position === 1) {
+      normTimeFrac = baseLapFraction;
+    } else if (
+      typeof d.lapTiming?.lapStartTime === "number" &&
+      typeof leaderStartTime === "number" &&
+      typeof d.lapTiming?.lapTime === "number" &&
+      d.lapTiming.lapTime > 0
+    ) {
+      // Driver's exact lap progress from their own lapStartTime and lapTime:
+      // Current session time is leaderStartTime + baseLapFraction * leaderLapTime
+      const tCurrent = leaderStartTime + baseLapFraction * leaderLapTime;
+      const tDriverInLap = tCurrent - d.lapTiming.lapStartTime;
+      const driverTimeFraction = tDriverInLap / d.lapTiming.lapTime;
+      normTimeFrac = ((driverTimeFraction % 1.0) + 1.0) % 1.0;
+    } else {
+      // Robust timing fallback using gapToLeader and driver's own lap time or baseLapTime
+      const driverLapDur = d.lapTiming?.lapTime && d.lapTiming.lapTime > 0 ? d.lapTiming.lapTime : baseLapTime;
+      const gapSec = gapToLeader ?? (d.position - 1) * 1.5;
+      const tDriver = baseLapFraction * baseLapTime - gapSec;
+      normTimeFrac = (((tDriver / driverLapDur) % 1.0) + 1.0) % 1.0;
+    }
+
+    // 2. Map local progress to normalized circuit progress using actual telemetry distance if available
+    let lapFraction: number;
+    if (d.subLap?.distance && Array.isArray(d.subLap.distance) && d.subLap.distance.length > 1) {
+      const dists = d.subLap.distance;
+      const nDist = dists.length;
+      const u = Math.max(0, Math.min(normTimeFrac * (nDist - 1), nDist - 1));
+      const idx = Math.floor(u);
+      const r = u - idx;
+      const dMeters = dists[idx]! + r * (dists[Math.min(idx + 1, nDist - 1)]! - dists[idx]!);
+      const maxDist = dists[nDist - 1]!;
+      lapFraction = maxDist > 0 ? dMeters / maxDist : normTimeFrac;
+    } else {
+      lapFraction = normTimeFrac;
+    }
+
+    // Ensure strictly in [0, 1) and rounded to 4 decimals
+    lapFraction = ((lapFraction % 1.0) + 1.0) % 1.0;
+    if (lapFraction >= 1.0) lapFraction = 0.0;
     lapFraction = Number(lapFraction.toFixed(4));
 
     let interpolatedSoc: number;
@@ -206,9 +265,9 @@ function getSnapshotAt(circuitId: string, time: number): RaceIQSnapshot {
       const u = Math.max(0, Math.min(lapFraction * nSegments, nSegments));
       const idx = Math.min(Math.floor(u), nSegments - 1);
       const r = u - idx;
-      const socSample = d.subLap.soc[idx] + r * (d.subLap.soc[idx + 1] - d.subLap.soc[idx]);
+      const socSample = d.subLap.soc[idx]! + r * (d.subLap.soc[idx + 1]! - d.subLap.soc[idx]!);
       interpolatedSoc = Number(socSample.toFixed(4));
-      socTrend = Number((d.subLap.soc[idx + 1] - d.subLap.soc[idx]).toFixed(4));
+      socTrend = Number((d.subLap.soc[idx + 1]! - d.subLap.soc[idx]!).toFixed(4));
 
       const nearestIdx = Math.min(Math.max(0, Math.round(u)), d.subLap.modes.length - 1);
       const isClipping = Boolean(d.subLap.clips && d.subLap.clips[nearestIdx]);
@@ -267,6 +326,9 @@ function getSnapshotAt(circuitId: string, time: number): RaceIQSnapshot {
       ersMode,
       aeroMode,
       inDetectionWindow,
+      tyre: d.tyre ?? null,
+      lapTiming: d.lapTiming ?? null,
+      subLap: d.subLap ?? null,
     };
   });
 

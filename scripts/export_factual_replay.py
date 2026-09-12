@@ -244,6 +244,42 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     "clips": sub_clips,
                 }
 
+            # Authoritative FastF1 lap timing
+            lap_start_s: Optional[float] = None
+            if pd.notna(row.get("LapStartTime")) and hasattr(row["LapStartTime"], "total_seconds"):
+                lap_start_s = round(float(row["LapStartTime"].total_seconds()), 3)
+
+            lap_end_s: Optional[float] = None
+            if pd.notna(row.get("Time")) and hasattr(row["Time"], "total_seconds"):
+                lap_end_s = round(float(row["Time"].total_seconds()), 3)
+
+            lap_time_s: Optional[float] = None
+            if pd.notna(row.get("LapTime")) and hasattr(row["LapTime"], "total_seconds"):
+                lap_time_s = round(float(row["LapTime"].total_seconds()), 3)
+            elif lap_start_s is not None and lap_end_s is not None:
+                lap_time_s = round(float(lap_end_s - lap_start_s), 3)
+
+            lap_timing = {
+                "lapStartTime": lap_start_s,
+                "lapEndTime": lap_end_s,
+                "lapTime": lap_time_s,
+            }
+
+            # Authoritative FastF1 tyre compound and age
+            compound_raw = str(row["Compound"]).strip().upper() if pd.notna(row.get("Compound")) else None
+            if compound_raw in ("SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"):
+                compound = compound_raw
+            else:
+                compound = None
+
+            tyre_age_raw = row.get("TyreLife")
+            tyre_age = int(round(float(tyre_age_raw))) if pd.notna(tyre_age_raw) else None
+
+            tyre = {
+                "compound": compound,
+                "ageLaps": tyre_age,
+            }
+
             drv_state: Dict[str, Any] = {
                 "code": code,
                 "position": pos,
@@ -253,6 +289,8 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                 "nextSoc": round(next_soc_norm, 4),
                 "socTrend": round(soc_trend, 4),
                 "ersMode": mode,
+                "tyre": tyre,
+                "lapTiming": lap_timing,
                 "subLap": sub_lap,
             }
             
@@ -262,6 +300,13 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                 rival_code = rival_state["code"]
                 rival_soc_mj = replay.soc_at_lap(rival_code, lap)
                 
+                # Actual tyre age delta if both tyres are known
+                rival_tyre_age = rival_state.get("tyre", {}).get("ageLaps")
+                if tyre_age is not None and rival_tyre_age is not None:
+                    actual_tyre_delta = float(tyre_age - rival_tyre_age)
+                else:
+                    actual_tyre_delta = float((lap % 15) * 0.3)
+
                 # 8-state HMM Opponent Belief
                 pair_key = f"{code}_{rival_code}"
                 if pair_key not in hmm_filters:
@@ -298,7 +343,7 @@ def export_circuit_replay(circuit: str, dest_dirs: List[Path]) -> None:
                     gap_ahead_s=gapAhead,
                     closing_speed_kph=max(speed - 270.0, 0.0),
                     straight_remaining_m=650.0,
-                    tyre_age_delta_laps=float((lap % 15) * 0.3),
+                    tyre_age_delta_laps=actual_tyre_delta,
                     own_est_soc=est_soc_mj,
                     rival_est_soc=rival_soc_mj,
                     belief=belief,

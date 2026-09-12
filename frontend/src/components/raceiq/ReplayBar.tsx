@@ -15,37 +15,49 @@ export function ReplayBar() {
   } = useRaceIQ();
 
   return (
-    <div className="panel grid gap-3 p-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
-      <div className="flex items-center gap-2">
+    <div className="panel grid gap-3 p-2.5 sm:px-4 sm:py-2.5 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
+      {/* LEFT: PLAY/PAUSE, LAP x/y, RACE CLOCK */}
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={toggle}
-          className="data w-20 rounded-lg border border-primary/50 bg-primary/15 px-3 py-1.5 text-xs tracking-[0.14em] text-primary transition-colors hover:bg-primary/25"
+          className="data w-18 rounded border border-border bg-surface-raised px-2.5 py-1 text-[11px] font-semibold tracking-wider text-foreground transition-colors hover:border-primary/50 hover:bg-primary/10"
         >
           {playing ? "PAUSE" : "PLAY"}
         </button>
-        <span className="data text-xs text-muted-foreground">
-          LAP {snapshot.lap}/{snapshot.totalLaps} · {fmtClock(time)}
-        </span>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="data font-semibold text-foreground">
+            LAP {snapshot.lap}/{snapshot.totalLaps}
+          </span>
+          <span className="text-border">·</span>
+          <span className="data text-muted-foreground">
+            {fmtClock(time)}
+          </span>
+        </div>
       </div>
 
-      <input
-        type="range"
-        min={0}
-        max={duration}
-        step={1}
-        value={time}
-        onChange={(e) => setTime(Number(e.target.value))}
-        aria-label="Replay time"
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-      />
+      {/* CENTER: REPLAY TIMELINE */}
+      <div className="flex items-center px-1">
+        <input
+          type="range"
+          min={0}
+          max={duration}
+          step={1}
+          value={time}
+          onChange={(e) => setTime(Number(e.target.value))}
+          aria-label="Replay time"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded bg-muted accent-primary"
+        />
+      </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* RIGHT: CIRCUIT SELECTOR */}
+      <div className="flex items-center justify-end gap-2">
+        <span className="eyebrow text-[10px] hidden sm:inline">CIRCUIT</span>
         <select
           value={circuitId}
           onChange={(e) => setCircuit(e.target.value)}
-          aria-label="Circuit"
-          className="data rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px]"
+          aria-label="Circuit selector"
+          className="data rounded border border-border bg-surface-raised px-2.5 py-1 text-[11px] font-medium text-foreground focus:outline-none"
         >
           {circuits.map((c) => (
             <option key={c.id} value={c.id}>

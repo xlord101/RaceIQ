@@ -22,7 +22,7 @@ export function SiteHeader() {
               activeOptions={{ exact: item.to === "/" }}
               activeProps={{ className: "bg-accent text-foreground" }}
               inactiveProps={{ className: "text-muted-foreground hover:bg-accent/50" }}
-              className="rounded-lg px-2.5 py-1.5 text-xs transition-colors sm:text-sm"
+              className="rounded px-2.5 py-1 text-xs transition-colors sm:text-sm"
             >
               {item.label}
             </Link>
