@@ -169,7 +169,9 @@ function WhatIf() {
         BRANCH SEED · {(branch?.seed.circuitId ?? snapshot.circuitId).toUpperCase()} / LAP{" "}
         {branch?.seed.lap ?? snapshot.lap} / T{(branch?.seed.time ?? snapshot.time).toFixed(1)}s /{" "}
         {branch?.seed.driver ?? selected} {fmtPosition(branch?.seed.position ?? state?.position)} —
-        the seed is immutable and the historical replay is unchanged.
+        the seed is immutable and the historical replay is unchanged. Counterfactual branches are
+        pre-computed during RaceIQ data preparation from the replay state; clicking an action does
+        not run a live backend simulation.
       </p>
     </main>
   );

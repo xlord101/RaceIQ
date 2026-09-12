@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { DriverContext } from "@/components/raceiq/DriverContext";
 import { HaasPanel } from "@/components/raceiq/HaasPanel";
 import { MatchupCard } from "@/components/raceiq/MatchupCard";
 import { ProvenanceLegend, ProvenanceTag } from "@/components/raceiq/ProvenanceTag";
@@ -125,25 +126,31 @@ function LiveRace() {
         <TrackMap />
         <div className="space-y-4">
           <HaasPanel />
-          <MatchupCard />
-          <SelectedDriver />
+          <DriverContext />
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <TimingGrid />
-        <div className="panel p-4">
-          <p className="eyebrow">Where the numbers come from</p>
-          <div className="mt-2">
-            <ProvenanceLegend
-              kinds={[snapshot.positionsProvenance, snapshot.energyProvenance, "PROJECTED"]}
-            />
+        <div className="space-y-4">
+          <section className="panel p-4">
+            <p className="eyebrow">Arbitrary comparison — secondary</p>
+            <MatchupCard />
+            <SelectedDriver />
+          </section>
+          <div className="panel p-4">
+            <p className="eyebrow">Where the numbers come from</p>
+            <div className="mt-2">
+              <ProvenanceLegend
+                kinds={[snapshot.positionsProvenance, snapshot.energyProvenance, "PROJECTED"]}
+              />
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Lap {snapshot.lap} of {snapshot.totalLaps}. Positions and gaps come from the replay
+              source; battery, energy mode and every recommendation are RaceIQ estimates, not
+              measurements.
+            </p>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Lap {snapshot.lap} of {snapshot.totalLaps}. Positions and gaps come from the replay
-            source; battery, energy mode and every recommendation are RaceIQ estimates, not
-            measurements.
-          </p>
         </div>
       </div>
     </main>

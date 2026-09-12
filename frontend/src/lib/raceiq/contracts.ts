@@ -263,7 +263,7 @@ export interface RaceIQAnalysisSnapshot {
   } | undefined;
 
   // G. WHAT-IF
-  whatIfBranches?: Record<Posture, RaceIQWhatIfBranch> | undefined;
+  whatIfBranches?: Partial<Record<Posture, RaceIQWhatIfBranch>> | undefined;
 
   // H. TIMELINES
   timelines: {

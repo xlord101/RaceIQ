@@ -372,30 +372,12 @@ function getRecommendation(
   if (!lapData) return undefined;
 
   const driverData = lapData.drivers.find((d) => d.code === code);
+  // No exported recommendation exists for this state (e.g. the race leader has
+  // no car ahead to price against). Coverage audit: OCO and BEA have 100%
+  // coverage on all circuits; the only missing cells are P1 laps. The UI
+  // renders NO CALL instead of a fabricated posture.
   if (!driverData || !driverData.recommendation) {
-    const driverState = snapshot.byCode[code];
-    if (!driverState) return undefined;
-    return {
-      posture: "HOLD",
-      confidence: 0.85,
-      passProbability: 0.25,
-      overtakeEv: -0.15,
-      energyCost: 0.05,
-      reason: "Pacing delta nominal; conserving battery reserve",
-      constraints: ["soc_window: PASS", "harvest_cap: PASS", "deploy_cap: PASS"],
-      factors: [
-        {
-          label: "Detection gap",
-          value: driverState.gapAhead != null ? `+${driverState.gapAhead.toFixed(2)}s` : "n/a",
-          provenance: "ACTUAL",
-        },
-        {
-          label: "Battery (est.)",
-          value: `${Math.round((driverState.soc ?? 0.5) * 100)}%`,
-          provenance: "INFERRED",
-        },
-      ],
-    };
+    return undefined;
   }
 
   const rec = driverData.recommendation;
@@ -473,64 +455,11 @@ function getWhatIf(
     }
   }
 
-  const pos = driverState?.position ?? 10;
-  const gap = driverState?.gapAhead ?? 1.5;
-  const soc = driverState?.soc ?? 0.5;
-
-  switch (action) {
-    case "ATTACK":
-      return {
-        seed,
-        action,
-        projectedPosition: Math.max(1, pos - 1),
-        projectedGap: 0.75,
-        projectedSoc: Math.max(0.05, Number((soc - 0.12).toFixed(4))),
-        energyCost: 0.45,
-        outcome: "Overtake completed at Turn 1 apex",
-        risk: "HIGH",
-        confidence: 0.65,
-        opponentResponse: "Attempted defensive squeeze but conceded corner",
-      };
-    case "HOLD":
-      return {
-        seed,
-        action,
-        projectedPosition: pos,
-        projectedGap: gap,
-        projectedSoc: soc,
-        energyCost: 0.05,
-        outcome: "Pace matched; battery charge preserved for next straight",
-        risk: "LOW",
-        confidence: 0.94,
-        opponentResponse: "Maintained defensive positioning",
-      };
-    case "DEFEND":
-      return {
-        seed,
-        action,
-        projectedPosition: pos,
-        projectedGap: Number((gap + 0.35).toFixed(3)),
-        projectedSoc: Math.max(0.05, Number((soc - 0.06).toFixed(4))),
-        energyCost: 0.22,
-        outcome: "Track position secured against undercut attempt",
-        risk: "MEDIUM",
-        confidence: 0.86,
-        opponentResponse: "Attempted outside switchback; repelled",
-      };
-    case "HARVEST":
-      return {
-        seed,
-        action,
-        projectedPosition: pos,
-        projectedGap: Number((gap + 0.65).toFixed(3)),
-        projectedSoc: Math.min(0.95, Number((soc + 0.1).toFixed(4))),
-        energyCost: -0.38,
-        outcome: "Recharged +10 pt SoC; ceded 0.65s in dirty air",
-        risk: "LOW",
-        confidence: 0.92,
-        opponentResponse: "Pulled 0.65s margin down the straight",
-      };
-  }
+  // No pre-computed branch exists for this (driver, action, replay state) in
+  // the factual data preparation. We must not fabricate a "dynamic" projection
+  // at runtime — that would imply a backend calculation this static frontend
+  // does not run. The UI reports that no branch is available for this state.
+  return undefined;
 }
 
 function getAnalysisSnapshot(
@@ -643,13 +572,15 @@ function getAnalysisSnapshot(
     }
   }
 
-  // Precomputed counterfactual branches
-  const whatIfBranches: Record<Posture, RaceIQWhatIfBranch> = {
-    ATTACK: getWhatIf(snapshot, code, "ATTACK")!,
-    HOLD: getWhatIf(snapshot, code, "HOLD")!,
-    DEFEND: getWhatIf(snapshot, code, "DEFEND")!,
-    HARVEST: getWhatIf(snapshot, code, "HARVEST")!,
-  };
+  // Pre-computed counterfactual branches exported by the backend for this
+  // state. Only branches that actually exist are included — a missing action
+  // stays absent and the UI shows "no branch available" instead of an invented
+  // projection.
+  const whatIfBranches: Partial<Record<Posture, RaceIQWhatIfBranch>> = {};
+  for (const a of ["ATTACK", "HOLD", "DEFEND", "HARVEST"] as const) {
+    const br = getWhatIf(snapshot, code, a);
+    if (br) whatIfBranches[a] = br;
+  }
 
   const hmm = rec?.hmmBelief;
 
