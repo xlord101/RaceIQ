@@ -204,7 +204,7 @@ export interface RaceIQAnalysisSnapshot {
     isClipping: boolean;
     energyProvenance: Provenance;
     harvestCapMj: number;
-    harvestPotentialMj: number;
+    harvestPotentialMj?: number | null | undefined;
   };
 
   // D. OPPONENT INFERENCE

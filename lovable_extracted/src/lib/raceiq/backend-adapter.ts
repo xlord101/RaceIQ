@@ -624,20 +624,20 @@ function getAnalysisSnapshot(
           inWindow: driverState.inDetectionWindow ?? false,
         },
         straightContext: {
-          longestStraightM: 650.0,
+          longestStraightM: rec?.passFeatures?.straight_remaining_m,
           closingSpeedKph: rec?.passFeatures?.closing_speed_kph,
           detectionGapS: driverState.gapAhead ?? null,
         },
         subLapCheckpoints: subLap,
       },
     energy: {
-      soc: driverState.soc ?? 0.5,
+      soc: driverState.soc ?? 0,
       socTrend: driverState.socTrend ?? 0.0,
       ersMode: driverState.ersMode ?? "BALANCED",
       isClipping: driverState.ersMode === "CLIPPING",
       energyProvenance: snapshot.energyProvenance,
       harvestCapMj: factual?.harvestCapMj ?? 8.5,
-      harvestPotentialMj: rec?.passFeatures?.circuit_harvest_potential_mj ?? 3.0,
+      harvestPotentialMj: rec?.passFeatures?.circuit_harvest_potential_mj ?? null,
     },
     opponentInference: {
       rivalCode,

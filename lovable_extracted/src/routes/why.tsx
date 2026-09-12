@@ -55,6 +55,17 @@ function fmtSignedPoints(v?: number | null, fallback = EMPTY): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)} pts`;
 }
 
+const CANONICAL_HMM_STATES = [
+  "H|OT_avail",
+  "H|OT_spent",
+  "M|OT_avail",
+  "M|OT_spent",
+  "Lharvest|OT_avail",
+  "Lharvest|OT_spent",
+  "Lderate|OT_avail",
+  "Lderate|OT_spent",
+] as const;
+
 function SectionCard({
   number,
   title,
@@ -140,17 +151,21 @@ function Why() {
   // Ranked 8-state HMM posterior distribution
   const rawHmm = analysisSnapshot?.opponentInference?.hmmBelief;
   const hmmStates = rawHmm
-    ? Object.entries(rawHmm)
-        .map(([name, prob]) => ({
-          name,
-          prob,
-          pct: Math.round(prob * 100),
-          isDerate: name.startsWith("Lderate"),
-          isHarvest: name.startsWith("Lharvest"),
-        }))
+    ? CANONICAL_HMM_STATES
+        .filter((name) => typeof (rawHmm as Record<string, number>)[name] === "number")
+        .map((name) => {
+          const prob = (rawHmm as Record<string, number>)[name] ?? 0;
+          return {
+            name,
+            prob,
+            pct: Math.round(prob * 100),
+            isDerate: name.startsWith("Lderate"),
+            isHarvest: name.startsWith("Lharvest"),
+          };
+        })
         .sort((a, b) => b.prob - a.prob)
     : [];
-  const dominantState = hmmStates[0]?.name ?? "H|OT_avail";
+  const dominantState = hmmStates[0]?.name ?? EMPTY;
 
   // PassModel 12 canonical features
   const pmFeat = analysisSnapshot?.passModel?.features;
@@ -160,7 +175,7 @@ function Why() {
           num: 1,
           name: "gap_ahead_s",
           label: "Gap Ahead",
-          value: `${pmFeat.gap_ahead_s.toFixed(2)} s`,
+          value: isNum(pmFeat.gap_ahead_s) ? `${pmFeat.gap_ahead_s.toFixed(2)} s` : EMPTY,
           provenance: "OBSERVED" as Provenance,
           desc: "Physical gap to the car ahead at detection point",
         },
@@ -168,7 +183,9 @@ function Why() {
           num: 2,
           name: "closing_speed_kph",
           label: "Closing Speed",
-          value: `${pmFeat.closing_speed_kph > 0 ? "+" : ""}${pmFeat.closing_speed_kph.toFixed(1)} km/h`,
+          value: isNum(pmFeat.closing_speed_kph)
+            ? `${pmFeat.closing_speed_kph > 0 ? "+" : ""}${pmFeat.closing_speed_kph.toFixed(1)} km/h`
+            : EMPTY,
           provenance: "DERIVED" as Provenance,
           desc: "Speed delta closing rate along active straight",
         },
@@ -176,7 +193,9 @@ function Why() {
           num: 3,
           name: "straight_remaining_m",
           label: "Straight Remaining",
-          value: `${pmFeat.straight_remaining_m.toFixed(0)} m`,
+          value: isNum(pmFeat.straight_remaining_m)
+            ? `${pmFeat.straight_remaining_m.toFixed(0)} m`
+            : EMPTY,
           provenance: "DERIVED" as Provenance,
           desc: "Distance remaining before heavy braking zone",
         },
@@ -184,7 +203,9 @@ function Why() {
           num: 4,
           name: "tyre_age_delta_laps",
           label: "Tyre-Age Delta",
-          value: `${pmFeat.tyre_age_delta_laps > 0 ? "+" : ""}${pmFeat.tyre_age_delta_laps.toFixed(1)} laps`,
+          value: isNum(pmFeat.tyre_age_delta_laps)
+            ? `${pmFeat.tyre_age_delta_laps > 0 ? "+" : ""}${pmFeat.tyre_age_delta_laps.toFixed(1)} laps`
+            : EMPTY,
           provenance: "OBSERVED" as Provenance,
           desc: "Tyre compound degradation delta (own - rival)",
         },
@@ -192,7 +213,7 @@ function Why() {
           num: 5,
           name: "own_est_soc",
           label: "Own Estimated SoC",
-          value: `${pmFeat.own_est_soc.toFixed(2)} MJ`,
+          value: isNum(pmFeat.own_est_soc) ? `${pmFeat.own_est_soc.toFixed(2)} MJ` : EMPTY,
           provenance: "INFERRED" as Provenance,
           desc: "Observer estimate of our deployable battery energy",
         },
@@ -200,7 +221,7 @@ function Why() {
           num: 6,
           name: "rival_est_soc",
           label: "Rival Estimated SoC",
-          value: `${pmFeat.rival_est_soc.toFixed(2)} MJ`,
+          value: isNum(pmFeat.rival_est_soc) ? `${pmFeat.rival_est_soc.toFixed(2)} MJ` : EMPTY,
           provenance: "INFERRED" as Provenance,
           desc: "Observer estimate of rival deployable battery energy",
         },
@@ -224,7 +245,12 @@ function Why() {
           num: 9,
           name: "trap_flag",
           label: "Trap Flag",
-          value: pmFeat.trap_flag ? "FLAGGED (TRUE)" : "CLEAR (FALSE)",
+          value:
+            typeof pmFeat.trap_flag === "boolean"
+              ? pmFeat.trap_flag
+                ? "FLAGGED (TRUE)"
+                : "CLEAR (FALSE)"
+              : EMPTY,
           provenance: "INFERRED" as Provenance,
           desc: "Heuristic trap trigger when opponent hoards deploy reserve",
         },
@@ -232,7 +258,12 @@ function Why() {
           num: 10,
           name: "overtake_mode_active",
           label: "Overtake Mode",
-          value: pmFeat.overtake_mode_active ? "ACTIVE" : "INACTIVE",
+          value:
+            typeof pmFeat.overtake_mode_active === "boolean"
+              ? pmFeat.overtake_mode_active
+                ? "ACTIVE"
+                : "INACTIVE"
+              : EMPTY,
           provenance: "OBSERVED" as Provenance,
           desc: "FIA overtake boost activation window status",
         },
@@ -240,7 +271,9 @@ function Why() {
           num: 11,
           name: "circuit_harvest_potential_mj",
           label: "Circuit Harvest Potential",
-          value: `${pmFeat.circuit_harvest_potential_mj.toFixed(1)} MJ`,
+          value: isNum(pmFeat.circuit_harvest_potential_mj)
+            ? `${pmFeat.circuit_harvest_potential_mj.toFixed(1)} MJ`
+            : EMPTY,
           provenance: "DERIVED" as Provenance,
           desc: "Predicted braking regen available over remainder of lap",
         },
@@ -248,7 +281,7 @@ function Why() {
           num: 12,
           name: "laps_remaining",
           label: "Laps Remaining",
-          value: `${pmFeat.laps_remaining}`,
+          value: isNum(pmFeat.laps_remaining) ? `${pmFeat.laps_remaining}` : EMPTY,
           provenance: "OBSERVED" as Provenance,
           desc: "Remaining laps to race completion",
         },
@@ -479,19 +512,23 @@ function Why() {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Current Segment:</span>
               <span className="text-foreground uppercase">
-                {analysisSnapshot?.telemetry?.relevantTrackSegment ?? "STRAIGHT"}
+                {analysisSnapshot?.telemetry?.relevantTrackSegment ?? EMPTY}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Active Straight Remaining:</span>
               <span className="text-foreground">
-                {analysisSnapshot?.passModel?.features?.straight_remaining_m.toFixed(0) ?? "650"} m
+                {isNum(analysisSnapshot?.passModel?.features?.straight_remaining_m)
+                  ? `${analysisSnapshot.passModel.features.straight_remaining_m.toFixed(0)} m`
+                  : EMPTY}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Longest Circuit Straight:</span>
               <span className="text-foreground">
-                {analysisSnapshot?.telemetry?.straightContext?.longestStraightM?.toFixed(0) ?? "650"} m
+                {isNum(analysisSnapshot?.telemetry?.straightContext?.longestStraightM)
+                  ? `${analysisSnapshot.telemetry.straightContext.longestStraightM.toFixed(0)} m`
+                  : EMPTY}
               </span>
             </div>
           </div>
@@ -609,27 +646,33 @@ function Why() {
         provenance="DERIVED"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {canonicalFeaturesList.map((f) => (
-            <div
-              key={f.name}
-              className="panel p-3 border-border/60 bg-surface/30 hover:border-border transition-colors flex flex-col justify-between space-y-2"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-mono text-xs text-muted-foreground">
-                  #{f.num} · {f.label}
-                </span>
-                <ProvenanceTag kind={f.provenance} />
-              </div>
-              <div>
-                <span className="font-mono text-base font-bold text-foreground block">
-                  {f.value}
-                </span>
-                <span className="text-[11px] text-muted-foreground leading-tight block mt-1">
-                  {f.desc}
-                </span>
-              </div>
+          {canonicalFeaturesList.length === 0 ? (
+            <div className="col-span-full panel p-6 text-center text-xs text-muted-foreground border-dashed">
+              No active pass features for current driver context (e.g. race leader P1 or no rival ahead).
             </div>
-          ))}
+          ) : (
+            canonicalFeaturesList.map((f) => (
+              <div
+                key={f.name}
+                className="panel p-3 border-border/60 bg-surface/30 hover:border-border transition-colors flex flex-col justify-between space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono text-xs text-muted-foreground">
+                    #{f.num} · {f.label}
+                  </span>
+                  <ProvenanceTag kind={f.provenance} />
+                </div>
+                <div>
+                  <span className="font-mono text-base font-bold text-foreground block">
+                    {f.value}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground leading-tight block mt-1">
+                    {f.desc}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </SectionCard>
 
@@ -671,7 +714,7 @@ function Why() {
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">ERS Mode</span>
             <span className="text-sm font-bold text-foreground uppercase">
-              {state?.ersMode ?? "BALANCED"}
+              {state?.ersMode ?? EMPTY}
             </span>
             <span className="text-[10px] text-inferred font-mono mt-0.5 block">CLASSIFIED</span>
           </div>
@@ -679,13 +722,17 @@ function Why() {
             <span className="text-[10px] text-muted-foreground uppercase block">Clipping State</span>
             <span
               className={`text-sm font-bold ${
-                state?.ersMode === "CLIPPING" ? "text-attack" : "text-emerald-400"
+                state?.ersMode === "CLIPPING"
+                  ? "text-attack"
+                  : state?.ersMode
+                  ? "text-emerald-400"
+                  : "text-muted-foreground"
               }`}
             >
-              {state?.ersMode === "CLIPPING" ? "CLIPPING" : "NOMINAL"}
+              {state?.ersMode === "CLIPPING" ? "CLIPPING" : state?.ersMode ? "NOMINAL" : EMPTY}
             </span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">
-              {state?.ersMode === "CLIPPING" ? "CEILING SATURATED" : "NO SATURATION"}
+              {state?.ersMode === "CLIPPING" ? "CEILING SATURATED" : state?.ersMode ? "NO SATURATION" : EMPTY}
             </span>
           </div>
           <div className="panel p-3 bg-surface/40">
@@ -696,7 +743,9 @@ function Why() {
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">Harvest Potential</span>
             <span className="text-base font-bold text-foreground">
-              {analysisSnapshot?.energy?.harvestPotentialMj?.toFixed(1) ?? "3.0"} MJ
+              {isNum(analysisSnapshot?.energy?.harvestPotentialMj)
+                ? `${analysisSnapshot.energy.harvestPotentialMj.toFixed(1)} MJ`
+                : EMPTY}
             </span>
             <span className="text-[10px] text-derived font-mono mt-0.5 block">REMAINING LAP</span>
           </div>
@@ -1081,17 +1130,25 @@ function Why() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30 bg-surface/20">
-              {canonicalFeaturesList.map((f) => (
-                <tr key={f.name} className="hover:bg-muted/20">
-                  <td className="p-2.5 text-muted-foreground font-semibold">{f.num}</td>
-                  <td className="p-2.5 font-bold text-foreground">{f.name}</td>
-                  <td className="p-2.5 text-foreground font-semibold">{f.value}</td>
-                  <td className="p-2.5">
-                    <ProvenanceTag kind={f.provenance} />
+              {canonicalFeaturesList.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-6 text-center text-xs text-muted-foreground font-sans">
+                    No active pass model evaluation for current driver context (e.g. race leader P1 or no rival ahead).
                   </td>
-                  <td className="p-2.5 text-muted-foreground hidden sm:table-cell">{f.desc}</td>
                 </tr>
-              ))}
+              ) : (
+                canonicalFeaturesList.map((f) => (
+                  <tr key={f.name} className="hover:bg-muted/20">
+                    <td className="p-2.5 text-muted-foreground font-semibold">{f.num}</td>
+                    <td className="p-2.5 font-bold text-foreground">{f.name}</td>
+                    <td className="p-2.5 text-foreground font-semibold">{f.value}</td>
+                    <td className="p-2.5">
+                      <ProvenanceTag kind={f.provenance} />
+                    </td>
+                    <td className="p-2.5 text-muted-foreground hidden sm:table-cell">{f.desc}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -1183,7 +1240,7 @@ function Why() {
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">Points Gain</span>
             <span className="text-base font-bold text-foreground">
-              +{evBreakdown?.points_gain?.toFixed(1) ?? "0.0"} pts
+              {isNum(evBreakdown?.points_gain) ? `+${evBreakdown.points_gain.toFixed(1)} pts` : EMPTY}
             </span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">POSITION DELTA</span>
           </div>
@@ -1193,29 +1250,31 @@ function Why() {
               {fmtPct(evBreakdown?.repass_risk)}
             </span>
             <span className="text-[10px] text-attack block mt-0.5">
-              -{evBreakdown?.repass_cost_pts?.toFixed(1) ?? "0.0"} pts
+              {isNum(evBreakdown?.repass_cost_pts) ? `-${evBreakdown.repass_cost_pts.toFixed(1)} pts` : EMPTY}
             </span>
           </div>
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">Repayment Cost (Time)</span>
             <span className="text-base font-bold text-foreground">
-              {evBreakdown?.repayment_cost_s?.toFixed(2) ?? "0.00"} s
+              {isNum(evBreakdown?.repayment_cost_s) ? `${evBreakdown.repayment_cost_s.toFixed(2)} s` : EMPTY}
             </span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">RECHARGE TIME</span>
           </div>
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">Repayment Cost (Pts)</span>
             <span className="text-base font-bold text-attack">
-              -{evBreakdown?.repayment_cost_pts?.toFixed(1) ?? "0.0"} pts
+              {isNum(evBreakdown?.repayment_cost_pts) ? `-${evBreakdown.repayment_cost_pts.toFixed(1)} pts` : EMPTY}
             </span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">POINTS CONVERSION</span>
           </div>
           <div className="panel p-3 bg-surface/40">
             <span className="text-[10px] text-muted-foreground uppercase block">Legality Penalty</span>
             <span className="text-base font-bold text-foreground">
-              {evBreakdown?.illegal_penalty?.toFixed(0) ?? "0"} pts
+              {isNum(evBreakdown?.illegal_penalty) ? `${evBreakdown.illegal_penalty.toFixed(0)} pts` : EMPTY}
             </span>
-            <span className="text-[10px] text-emerald-400 block mt-0.5">COMPLIANT</span>
+            <span className="text-[10px] text-emerald-400 block mt-0.5">
+              {isNum(evBreakdown?.illegal_penalty) && evBreakdown.illegal_penalty === 0 ? "COMPLIANT" : isNum(evBreakdown?.illegal_penalty) && evBreakdown.illegal_penalty > 0 ? "VIOLATION" : EMPTY}
+            </span>
           </div>
           <div className="panel p-3 bg-surface/40 border-primary/50">
             <span className="text-[10px] text-muted-foreground uppercase block font-semibold">
@@ -1315,7 +1374,7 @@ function Why() {
             </div>
             <div className="space-y-1 text-foreground">
               <div>Gap: {isLeader ? "LEADER" : fmtSeconds(state?.gapAhead, 2)}</div>
-              <div>Speed: {isNum(analysisSnapshot?.telemetry?.speed) ? `${analysisSnapshot.telemetry.speed.toFixed(0)} km/h` : "---"}</div>
+              <div>Speed: {isNum(analysisSnapshot?.telemetry?.speed) ? `${analysisSnapshot.telemetry.speed.toFixed(0)} km/h` : EMPTY}</div>
               <div>Pos: {fmtPosition(state?.position)}</div>
               <div>Window: {analysisSnapshot?.telemetry?.detectionWindow?.inWindow ? "IN" : "OUT"}</div>
             </div>
@@ -1328,10 +1387,10 @@ function Why() {
               <ProvenanceTag kind="DERIVED" />
             </div>
             <div className="space-y-1 text-foreground">
-              <div>Closing: {pmFeat ? `${pmFeat.closing_speed_kph.toFixed(1)} km/h` : "---"}</div>
-              <div>Straight: {pmFeat ? `${pmFeat.straight_remaining_m.toFixed(0)} m` : "---"}</div>
-              <div>Tyre Delta: {pmFeat ? `${pmFeat.tyre_age_delta_laps.toFixed(1)}L` : "---"}</div>
-              <div>Regen: {pmFeat ? `${pmFeat.circuit_harvest_potential_mj.toFixed(1)} MJ` : "---"}</div>
+              <div>Closing: {isNum(pmFeat?.closing_speed_kph) ? `${pmFeat.closing_speed_kph > 0 ? "+" : ""}${pmFeat.closing_speed_kph.toFixed(1)} km/h` : EMPTY}</div>
+              <div>Straight: {isNum(pmFeat?.straight_remaining_m) ? `${pmFeat.straight_remaining_m.toFixed(0)} m` : EMPTY}</div>
+              <div>Tyre Delta: {isNum(pmFeat?.tyre_age_delta_laps) ? `${pmFeat.tyre_age_delta_laps > 0 ? "+" : ""}${pmFeat.tyre_age_delta_laps.toFixed(1)}L` : EMPTY}</div>
+              <div>Regen: {isNum(pmFeat?.circuit_harvest_potential_mj) ? `${pmFeat.circuit_harvest_potential_mj.toFixed(1)} MJ` : EMPTY}</div>
             </div>
           </div>
 
@@ -1343,7 +1402,7 @@ function Why() {
             </div>
             <div className="space-y-1 text-foreground">
               <div>Own SoC: {fmtPct(state?.soc)}</div>
-              <div>Rival SoC: {rivalState?.soc ? fmtPct(rivalState.soc) : "N/A"}</div>
+              <div>Rival SoC: {isNum(rivalState?.soc) ? fmtPct(rivalState.soc) : EMPTY}</div>
               <div>P(Lderate): {fmtPct(analysisSnapshot?.opponentInference?.pLderate)}</div>
               <div>P(Lharvest): {fmtPct(analysisSnapshot?.opponentInference?.pLharvest)}</div>
             </div>
@@ -1360,8 +1419,8 @@ function Why() {
               <div className="text-sm font-bold text-primary">
                 P(Pass): {fmtPct(analysisSnapshot?.passModel?.pPass ?? rec?.passProbability)}
               </div>
-              <div>Trap Flag: {pmFeat?.trap_flag ? "TRUE" : "FALSE"}</div>
-              <div>OT Active: {pmFeat?.overtake_mode_active ? "YES" : "NO"}</div>
+              <div>Trap Flag: {typeof pmFeat?.trap_flag === "boolean" ? (pmFeat.trap_flag ? "TRUE" : "FALSE") : EMPTY}</div>
+              <div>OT Active: {typeof pmFeat?.overtake_mode_active === "boolean" ? (pmFeat.overtake_mode_active ? "YES" : "NO") : EMPTY}</div>
             </div>
           </div>
 
@@ -1372,9 +1431,9 @@ function Why() {
               <ProvenanceTag kind="INFERRED" />
             </div>
             <div className="space-y-1 text-foreground">
-              <div>Pts Gain: +{evBreakdown?.points_gain?.toFixed(1) ?? "0.0"}</div>
-              <div>Repass: -{evBreakdown?.repass_cost_pts?.toFixed(1) ?? "0.0"} pts</div>
-              <div>Repay: -{evBreakdown?.repayment_cost_pts?.toFixed(1) ?? "0.0"} pts</div>
+              <div>Pts Gain: {isNum(evBreakdown?.points_gain) ? `+${evBreakdown.points_gain.toFixed(1)}` : EMPTY}</div>
+              <div>Repass: {isNum(evBreakdown?.repass_cost_pts) ? `-${evBreakdown.repass_cost_pts.toFixed(1)} pts` : EMPTY}</div>
+              <div>Repay: {isNum(evBreakdown?.repayment_cost_pts) ? `-${evBreakdown.repayment_cost_pts.toFixed(1)} pts` : EMPTY}</div>
               <div className="text-sm font-bold text-foreground">
                 EV: {fmtSignedPoints(strategicEv)}
               </div>
