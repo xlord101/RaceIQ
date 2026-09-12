@@ -13,7 +13,7 @@ from raceiq.validation.metrics import physics_frontier
 def export_circuit(circuit: str, out_dir: str):
     print(f"Building replay for {circuit}...")
     try:
-        replay = build_replay(circuit)
+        replay = build_replay(circuit, year=2026, session="R")
     except Exception as e:
         print(f"Error building replay for {circuit}: {e}")
         return
@@ -27,13 +27,34 @@ def export_circuit(circuit: str, out_dir: str):
     frontier = physics_frontier(harvest_potential)
     ev_engine = OvertakeEV(config=replay.rules, pass_model=PassModel(), event=None)
     
+    s = getattr(replay.data, "_ff1", None)
+    event_name = str(getattr(s.event, "EventName", f"{circuit} Grand Prix") if s and hasattr(s, "event") else f"{circuit} Grand Prix")
+    race_date = str(s.date.strftime("%Y-%m-%d") if s and hasattr(s, "date") and s.date is not None else "2026")
+    circuit_name = str(getattr(replay.event_cfg, "name", f"{circuit} Circuit"))
+
+    metadata = {
+        "season": 2026,
+        "sessionType": "Race",
+        "event": event_name,
+        "circuit": circuit_name,
+        "date": race_date,
+        "source": "fastf1",
+        "telemetryYear": 2026,
+        "ruleset": "2026",
+        "positionsProvenance": "ACTUAL",
+        "energyProvenance": "INFERRED",
+    }
+    
     out = {
+        "metadata": metadata,
+        "season": 2026,
+        "sessionType": "Race",
         "circuitId": circuit,
         "totalLaps": total_laps,
         "laps": []
     }
     
-    haas_codes = ["MAG", "HUL", "BEA", "OCO"]
+    haas_codes = ["OCO", "BEA"]
     
     for lap in range(1, total_laps + 1):
         tower = replay.timing_tower(lap)

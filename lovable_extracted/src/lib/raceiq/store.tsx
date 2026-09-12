@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { simulationAdapter } from "./adapter";
+import { backendAdapter, simulationAdapter } from "./adapter";
 import type {
   DriverIdentity,
   Posture,
@@ -48,10 +48,10 @@ const RaceIQContext = createContext<RaceIQContextValue | null>(null);
 
 export function RaceIQProvider({
   children,
-  adapter = simulationAdapter,
+  adapter = backendAdapter,
 }: {
   children: ReactNode;
-  /** Swap this for a RaceIQ backend adapter — no component changes required. */
+  /** Real backend adapter is the default; simulation is available as fallback */
   adapter?: RaceIQAdapter;
 }) {
   const firstCircuit = adapter.circuits[0]!;

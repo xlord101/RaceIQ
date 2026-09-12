@@ -1,13 +1,15 @@
+import { backendAdapter } from "./backend-adapter";
 import { CIRCUIT_LIST, CIRCUITS, type CircuitId } from "./circuits";
 import type { RaceIQAdapter } from "./contracts";
 import { DRIVER_BY_CODE } from "./drivers";
 import { recommend, simulateWhatIf } from "./engine";
 import { raceDuration, snapshotAt } from "./sim";
 
+export { backendAdapter };
+
 /**
- * Placeholder adapter. It implements the same RaceIQAdapter contract a real
- * RaceIQ backend adapter will implement, so swapping data sources is a one-line
- * change at <RaceIQProvider adapter={...}> and touches no component.
+ * Fallback simulation adapter. It implements the same RaceIQAdapter contract
+ * with honest SAMPLE provenance for emergency offline/demo fallback.
  */
 export const simulationAdapter: RaceIQAdapter = {
   id: "simulation",
@@ -20,3 +22,6 @@ export const simulationAdapter: RaceIQAdapter = {
   recommend,
   whatIf: simulateWhatIf,
 };
+
+export const primaryAdapter: RaceIQAdapter = backendAdapter;
+

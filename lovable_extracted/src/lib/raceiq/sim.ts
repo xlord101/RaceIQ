@@ -98,7 +98,7 @@ export function snapshotAt(circuitId: CircuitId, time: number): RaceSnapshot {
     lap,
     totalLaps: circuit.laps,
     positionsProvenance: "SAMPLE",
-    energyProvenance: "INFERRED",
+    energyProvenance: "SAMPLE",
     drivers,
     byCode: Object.fromEntries(drivers.map((d) => [d.code, d])),
   };
