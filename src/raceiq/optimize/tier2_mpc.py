@@ -29,8 +29,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
-import numpy as np
-
 from raceiq.config import EventConfig, RulesConfig, load_rules
 from raceiq.optimize.frontier import ParetoFrontier
 from raceiq.types import Belief, Posture

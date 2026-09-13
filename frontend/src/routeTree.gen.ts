@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ImpactRouteImport } from './routes/impact'
+import { Route as LiveRouteImport } from './routes/live'
 import { Route as WhatIfRouteImport } from './routes/what-if'
 import { Route as WhyRouteImport } from './routes/why'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const ImpactRoute = ImpactRouteImport.update({
   id: '/impact',
   path: '/impact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveRoute = LiveRouteImport.update({
+  id: '/live',
+  path: '/live',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WhatIfRoute = WhatIfRouteImport.update({
@@ -38,12 +44,14 @@ const WhyRoute = WhyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/impact': typeof ImpactRoute
+  '/live': typeof LiveRoute
   '/what-if': typeof WhatIfRoute
   '/why': typeof WhyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/impact': typeof ImpactRoute
+  '/live': typeof LiveRoute
   '/what-if': typeof WhatIfRoute
   '/why': typeof WhyRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/impact': typeof ImpactRoute
+  '/live': typeof LiveRoute
   '/what-if': typeof WhatIfRoute
   '/why': typeof WhyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/impact' | '/what-if' | '/why'
+  fullPaths: '/' | '/impact' | '/live' | '/what-if' | '/why'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/impact' | '/what-if' | '/why'
-  id: '__root__' | '/' | '/impact' | '/what-if' | '/why'
+  to: '/' | '/impact' | '/live' | '/what-if' | '/why'
+  id: '__root__' | '/' | '/impact' | '/live' | '/what-if' | '/why'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ImpactRoute: typeof ImpactRoute
+  LiveRoute: typeof LiveRoute
   WhatIfRoute: typeof WhatIfRoute
   WhyRoute: typeof WhyRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/impact'
       fullPath: '/impact'
       preLoaderRoute: typeof ImpactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live': {
+      id: '/live'
+      path: '/live'
+      fullPath: '/live'
+      preLoaderRoute: typeof LiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/what-if': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ImpactRoute: ImpactRoute,
+  LiveRoute: LiveRoute,
   WhatIfRoute: WhatIfRoute,
   WhyRoute: WhyRoute,
 }

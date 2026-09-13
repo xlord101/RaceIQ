@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^Copy-Item \"c:\\\\Users\\\\shind\\\\Desktop\\\\race-iq-presentation\\\\app\\\\page\\.tsx\" \"c:\\\\Users\\\\shind\\\\\\.copilot\\\\session-state\\\\40323512-2bf6-4335-8964-b92da2a61860\\\\files\\\\page-before-car-text-tweak\\.tsx\" -Force; Copy-Item \"c:\\\\Users\\\\shind\\\\Desktop\\\\race-iq-presentation\\\\app\\\\globals\\.css\" \"c:\\\\Users\\\\shind\\\\\\.copilot\\\\session-state\\\\40323512-2bf6-4335-8964-b92da2a61860\\\\files\\\\globals-before-car-text-tweak\\.css\" -Force; Write-Output 'BACKUP_CREATED'$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
